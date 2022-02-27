@@ -49,11 +49,11 @@ endif()
 # Do this before configuring modules so that the flags are included
 option(BUILD_TESTING "Build the testing tree." OFF)
 if(BUILD_TESTING)
-  set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -DUNIT_TEST")
+  set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -DUNIT_TEST -g")
 endif()
 option(BUILD_OPENFAST_SIMULINK_API "Enable building OpenFAST for use with Simulink" off)
 if(BUILD_OPENFAST_SIMULINK_API)
-  set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -DCOMPILE_SIMULINK")
+  set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -DCOMPILE_SIMULINK -g")
 endif()
 
 # Setup Fortran Compiler options based on architecture/compiler

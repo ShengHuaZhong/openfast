@@ -42,9 +42,9 @@ SUBROUTINE FAST_InitializeAll_T( t_initial, TurbID, Turbine, ErrStat, ErrMsg, In
    CHARACTER(*),             OPTIONAL,INTENT(IN   ) :: InFile         !< A CHARACTER string containing the name of the primary FAST input file (if not present, we'll get it from the command line)
    TYPE(FAST_ExternInitType),OPTIONAL,INTENT(IN   ) :: ExternInitData !< Initialization input data from an external source (Simulink)
 
+
    Turbine%TurbID = TurbID
-
-
+   
    IF (PRESENT(InFile)) THEN
       IF (PRESENT(ExternInitData)) THEN
          CALL FAST_InitializeAll( t_initial, Turbine%p_FAST, Turbine%y_FAST, Turbine%m_FAST, &
@@ -109,7 +109,7 @@ SUBROUTINE FAST_InitializeAll( t_initial, p_FAST, y_FAST, m_FAST, ED, BD, SrvD, 
    CHARACTER(1024)                         :: InputFile           !< A CHARACTER string containing the name of the primary FAST input file
    TYPE(FAST_InitData)                     :: Init                !< Initialization data for all modules
 
-
+   REAL(ReKi),                DIMENSION(6) :: Freedom
    REAL(ReKi)                              :: AirDens             ! air density for initialization/normalization of OpenFOAM data
    REAL(DbKi)                              :: dt_IceD             ! tmp dt variable to ensure IceDyn doesn't specify different dt values for different legs (IceDyn instances)
    REAL(DbKi)                              :: dt_BD               ! tmp dt variable to ensure BeamDyn doesn't specify different dt values for different instances
@@ -125,6 +125,15 @@ SUBROUTINE FAST_InitializeAll( t_initial, p_FAST, y_FAST, m_FAST, ED, BD, SrvD, 
    CHARACTER(ErrMsgLen)                    :: ErrMsg2
 
    CHARACTER(*), PARAMETER                 :: RoutineName = 'FAST_InitializeAll'
+   REAL(ReKi)                              :: dtime, V1_surge_init, V1_sway_init, V1_heave_init, V1_roll_init, V1_pitch_init, V1_yaw_init, V2_surge_init, V2_sway_init, V2_heave_init, V2_roll_init, V2_pitch_init, V2_yaw_init, V3_surge_init, V3_sway_init, V3_heave_init, V3_roll_init, V3_pitch_init, V3_yaw_init, V4_surge_init, V4_sway_init, V4_heave_init, V4_roll_init, V4_pitch_init, V4_yaw_init
+
+   INTEGER(IntKi)                          :: a,b
+
+   !......................................................
+   ! Initilition UDP socket
+   !......................................................
+   CALL init_socket()
+
 
 
    !..........
@@ -1065,10 +1074,61 @@ SUBROUTINE FAST_InitializeAll( t_initial, p_FAST, y_FAST, m_FAST, ED, BD, SrvD, 
    ! ........................
    ELSEIF (p_FAST%CompMooring == Module_MD) THEN
 
+      !...............................................................................................................................
+      ! Initialize tugboat program 
+      !...............................................................................................................................  
+      CALL ship_init_fun(p_FAST%DT, p_FAST%Ship1_Surge, p_FAST%Ship1_Sway, p_FAST%Ship1_Heave, p_FAST%Ship1_Roll, p_FAST%Ship1_Pitch, p_FAST%Ship1_Yaw, p_FAST%Ship2_Surge, p_FAST%Ship2_Sway, p_FAST%Ship2_Heave, p_FAST%Ship2_Roll, p_FAST%Ship2_Pitch, p_FAST%Ship2_Yaw, p_FAST%Ship3_Surge, p_FAST%Ship3_Sway, p_FAST%Ship3_Heave, p_FAST%Ship3_Roll, p_FAST%Ship3_Pitch, p_FAST%Ship3_Yaw,p_FAST%Ship4_Surge, p_FAST%Ship4_Sway, p_FAST%Ship4_Heave, p_FAST%Ship4_Roll, p_FAST%Ship4_Pitch, p_FAST%Ship4_Yaw)
+
+
+
+      ! initialize pos for ship
+      
+
+      Freedom(1) = p_FAST%Ship1_Surge
+      Freedom(2) = p_FAST%Ship1_Sway
+      Freedom(3) = p_FAST%Ship1_Heave
+      Freedom(4) = p_FAST%Ship1_Roll
+      Freedom(5) = p_Fast%Ship1_Pitch
+      Freedom(6) = p_Fast%Ship1_Yaw
+      CALL Set_Vessel_Freedom_Init(Init%InData_MD, Freedom, 5)
+
+      Freedom(1) = p_FAST%Ship2_Surge
+      Freedom(2) = p_FAST%Ship2_Sway
+      Freedom(3) = p_FAST%Ship2_Heave
+      Freedom(4) = p_FAST%Ship2_Roll
+      Freedom(5) = p_Fast%Ship2_Pitch
+      Freedom(6) = p_Fast%Ship2_Yaw
+      CALL Set_Vessel_Freedom_Init(Init%InData_MD, Freedom, 6)
+      
+      Freedom(1) = p_FAST%Ship3_Surge
+      Freedom(2) = p_FAST%Ship3_Sway
+      Freedom(3) = p_FAST%Ship3_Heave
+      Freedom(4) = p_FAST%Ship3_Roll
+      Freedom(5) = p_Fast%Ship3_Pitch
+      Freedom(6) = p_Fast%Ship3_Yaw
+      CALL Set_Vessel_Freedom_Init(Init%InData_MD, Freedom, 7)
+
+      Freedom(1) = p_FAST%Ship4_Surge
+      Freedom(2) = p_FAST%Ship4_Sway
+      Freedom(3) = p_FAST%Ship4_Heave
+      Freedom(4) = p_FAST%Ship4_Roll
+      Freedom(5) = p_Fast%Ship4_Pitch
+      Freedom(6) = p_Fast%Ship4_Yaw
+      CALL Set_Vessel_Freedom_Init(Init%InData_MD, Freedom, 8)
+
       Init%InData_MD%FileName  = p_FAST%MooringFile         ! This needs to be set according to what is in the FAST input file.
       Init%InData_MD%RootName  = p_FAST%OutFileRoot
-
-      Init%InData_MD%PtfmInit  = Init%OutData_ED%PlatformPos !ED%x(STATE_CURR)%QT(1:6)   ! initial position of the platform !bjj: this should come from Init%OutData_ED, not x_ED
+      DO a = 1,4
+         DO b = 1,6
+      Init%InData_MD%PtfmInit(a,b)  = Init%OutData_ED%PlatformPos(b) !ED%x(STATE_CURR)%QT(1:6)   ! initial position of the platform !bjj: this should come from Init%OutData_ED, not x_ED
+         END DO
+      END DO
+      DO a = 9,10
+         DO b = 1,6
+      Init%InData_MD%PtfmInit(a,b)  = Init%OutData_ED%PlatformPos(b) !ED%x(STATE_CURR)%QT(1:6)   ! initial position of the platform !bjj: this should come from Init%OutData_ED, not x_ED
+         END DO
+      END DO
+      !Init%InData_MD%PtfmInit  = Init%OutData_ED%PlatformPos !ED%x(STATE_CURR)%QT(1:6)   ! initial position of the platform !bjj: this should come from Init%OutData_ED, not x_ED
       Init%InData_MD%g         = Init%OutData_ED%Gravity     ! This need to be according to g used in ElastoDyn
       Init%InData_MD%rhoW      = Init%OutData_HD%WtrDens     ! This needs to be set according to seawater density in HydroDyn
       Init%InData_MD%WtrDepth  = Init%OutData_HD%WtrDpth    ! This need to be set according to the water depth in HydroDyn
@@ -1092,7 +1152,6 @@ SUBROUTINE FAST_InitializeAll( t_initial, p_FAST, y_FAST, m_FAST, ED, BD, SrvD, 
 
       Init%InData_FEAM%InputFile   = p_FAST%MooringFile         ! This needs to be set according to what is in the FAST input file.
       Init%InData_FEAM%RootName    = TRIM(p_FAST%OutFileRoot)//'.'//TRIM(y_FAST%Module_Abrev(Module_FEAM))
-
       Init%InData_FEAM%PtfmInit    = Init%OutData_ED%PlatformPos !ED%x(STATE_CURR)%QT(1:6)   ! initial position of the platform !bjj: this should come from Init%OutData_ED, not x_ED
       Init%InData_FEAM%NStepWave   = 1                          ! an arbitrary number > 0 (to set the size of the wave data, which currently contains all zero values)
       Init%InData_FEAM%gravity     = Init%OutData_ED%Gravity     ! This need to be according to g used in ElastoDyn
@@ -1827,8 +1886,6 @@ SUBROUTINE FAST_InitOutput( p_FAST, y_FAST, Init, ErrStat, ErrMsg )
    INTEGER(IntKi)                   :: indxNext                                        ! The index of the next value to be written to an array
    INTEGER(IntKi)                   :: NumOuts                                         ! number of channels to be written to the output file(s)
 
-
-
    !......................................................
    ! Set the description lines to be printed in the output file
    !......................................................
@@ -2379,7 +2436,177 @@ SUBROUTINE FAST_ReadPrimaryFile( InputFile, p, m_FAST, OverrideAbortErrLev, ErrS
          call cleanup()
          RETURN
       end if
+   !---------------------- WET TOW ---------------------------------------------------
+   CALL ReadCom( UnIn, InputFile, 'Section Header: WET TOW', ErrStat2, ErrMsg2, UnEc )
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if   
+   
+   CALL ReadVar( UnIn, InputFile, p%Ship1_Surge, "Ship1_Surge", "initial surge for tug1 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
 
+   CALL ReadVar( UnIn, InputFile, p%Ship1_Sway, "Ship1_Sway", "initial sway for tug1 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+   CALL ReadVar( UnIn, InputFile, p%Ship1_Heave, "Ship1_Heave", "initial heave for tug1 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+   CALL ReadVar( UnIn, InputFile, p%Ship1_Roll, "Ship1_Roll", "initial roll for tug1 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+   CALL ReadVar( UnIn, InputFile, p%Ship1_Pitch, "Ship1_Pitch", "initial pitch for tug1 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+   CALL ReadVar( UnIn, InputFile, p%Ship1_Yaw, "Ship1_Yaw", "initial yaw for tug1 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+      CALL ReadVar( UnIn, InputFile, p%Ship2_Surge, "Ship2_Surge", "initial surge for tug2 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+   CALL ReadVar( UnIn, InputFile, p%Ship2_Sway, "Ship2_Sway", "initial sway for tug2 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+   CALL ReadVar( UnIn, InputFile, p%Ship2_Heave, "Ship2_Heave", "initial heave for tug2 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+   CALL ReadVar( UnIn, InputFile, p%Ship2_Roll, "Ship2_Roll", "initial roll for tug2 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+   CALL ReadVar( UnIn, InputFile, p%Ship2_Pitch, "Ship2_Pitch", "initial pitch for tug2 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+   CALL ReadVar( UnIn, InputFile, p%Ship2_Yaw, "Ship2_Yaw", "initial yaw for tug2 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+      CALL ReadVar( UnIn, InputFile, p%Ship3_Surge, "Ship3_Surge", "initial surge for tug3 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+   CALL ReadVar( UnIn, InputFile, p%Ship3_Sway, "Ship3_Sway", "initial sway for tug3 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+   CALL ReadVar( UnIn, InputFile, p%Ship3_Heave, "Ship3_Heave", "initial heave for tug3 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+   CALL ReadVar( UnIn, InputFile, p%Ship3_Roll, "Ship3_Roll", "initial roll for tug3 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+   CALL ReadVar( UnIn, InputFile, p%Ship3_Pitch, "Ship3_Pitch", "initial pitch for tug3 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+   CALL ReadVar( UnIn, InputFile, p%Ship3_Yaw, "Ship3_Yaw", "initial yaw for tug3 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+      CALL ReadVar( UnIn, InputFile, p%Ship4_Surge, "Ship4_Surge", "initial surge for tug4 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+   CALL ReadVar( UnIn, InputFile, p%Ship4_Sway, "Ship4_Sway", "initial sway for tug4 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+   CALL ReadVar( UnIn, InputFile, p%Ship4_Heave, "Ship4_Heave", "initial heave for tug4 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+   CALL ReadVar( UnIn, InputFile, p%Ship4_Roll, "Ship4_Roll", "initial roll for tug4 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+   CALL ReadVar( UnIn, InputFile, p%Ship4_Pitch, "Ship4_Pitch", "initial pitch for tug4 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
+
+   CALL ReadVar( UnIn, InputFile, p%Ship4_Yaw, "Ship4_Yaw", "initial yaw for tug4 [rad]", ErrStat2, ErrMsg2, UnEc)
+      CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
+      if ( ErrStat >= AbortErrLev ) then
+         call cleanup()
+         RETURN
+      end if
    !---------------------- FEATURE SWITCHES AND FLAGS --------------------------------
    CALL ReadCom( UnIn, InputFile, 'Section Header: Feature Switches and Flags', ErrStat2, ErrMsg2, UnEc )
       CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName)
@@ -4754,6 +4981,16 @@ SUBROUTINE FAST_Solution(t_initial, n_t_global, p_FAST, y_FAST, m_FAST, ED, BD, 
       ENDIF
    ENDIF
 
+   !----------------------------------------------------------------------------------------
+   !! Display tug position:
+   !----------------------------------------------------------------------------------------
+   IF (p_FAST%WrSttsTime) then
+      IF ( MOD( n_t_global_next, p_FAST%n_SttsTime ) == 0 ) THEN
+         PRINT *, "ASDFSDFASDF ", p_FAST%Ship3_Surge, p_FAST%Ship3_Sway
+         PRINT *, "ASDDDDFADDF ", p_FAST%Ship4_Surge, p_FAST%Ship4_Sway 
+      ENDIF
+   ENDIF
+
 END SUBROUTINE FAST_Solution
 !----------------------------------------------------------------------------------------------------------------------------------
 ! ROUTINES TO OUTPUT WRITE DATA TO FILE AT EACH REQUSTED TIME STEP
@@ -4814,6 +5051,7 @@ SUBROUTINE WriteOutputToFile(n_t_global, t_global, p_FAST, y_FAST, ED, BD, AD14,
       ! Write time-series channel data
 
   !y_FAST%WriteThisStep = NeedWriteOutput(n_t_global, t_global, p_FAST)
+   CALL sned_data(t_global, ED%y%WriteOutput(1),ED%y%WriteOutput(2),ED%y%WriteOutput(3), ED%y%WriteOutput(4), ED%y%WriteOutput(5), ED%y%WriteOutput(6));
    IF ( y_FAST%WriteThisStep )  THEN
 
          ! Generate glue-code output file
@@ -4874,8 +5112,10 @@ SUBROUTINE WrOutputLine( t, p_FAST, y_FAST, IfWOutput, OpFMOutput, EDOutput, y_A
    ErrStat = ErrID_None
    ErrMsg  = ''
    
+   
    CALL FillOutputAry(p_FAST, y_FAST, IfWOutput, OpFMOutput, EDOutput, y_AD, SrvDOutput, HDOutput, SDOutput, ExtPtfmOutput, &
                       MAPOutput, FEAMOutput, MDOutput, OrcaOutput, IceFOutput, y_IceD, y_BD, OutputAry)   
+   
 
    IF (p_FAST%WrTxtOutFile) THEN
 
@@ -4996,7 +5236,9 @@ SUBROUTINE FillOutputAry(p_FAST, y_FAST, IfWOutput, OpFMOutput, EDOutput, y_AD, 
       IF ( y_FAST%numOuts(Module_ED) > 0 ) THEN
          indxLast = indxNext + SIZE(EDOutput) - 1
          OutputAry(indxNext:indxLast) = EDOutput
+         
          indxNext = IndxLast + 1
+        
       END IF
 
       IF ( y_FAST%numOuts(Module_BD) > 0 ) THEN

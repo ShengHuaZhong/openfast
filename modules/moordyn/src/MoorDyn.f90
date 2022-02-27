@@ -28,21 +28,181 @@ MODULE MoorDyn
    PRIVATE
 
    TYPE(ProgDesc), PARAMETER            :: MD_ProgDesc = ProgDesc( 'MoorDyn', 'v1.01.02F', '8-Apr-2016' )
-
-
+   
+   PUBLIC :: FLines_OUT
+   PUBLIC :: Line_OUT
+   PUBLIC :: Set_Vessel_Freedom
+   PUBLIC :: Set_Vessel_Freedom_Init
    PUBLIC :: MD_Init
    PUBLIC :: MD_UpdateStates
    PUBLIC :: MD_CalcOutput
    PUBLIC :: MD_CalcContStateDeriv
    PUBLIC :: MD_End
+   PUBLIC :: Set_Line_length
 
-CONTAINS
+    CONTAINS
+    
+    
+    !=========================================   Set_Vessel_Fredom   ===================================
+    !��ҵ��λ���趨
+   SUBROUTINE Set_Vessel_Freedom(u, m, VesselFreedom,VesselVelocity,fairlead_num)
+   
+   REAL  , DIMENSION(1:6)        ,INTENT(IN   ) :: VesselFreedom  !�������ɶ� m m m rad rad rad
+   REAL  , DIMENSION(1:6)        ,INTENT(IN   ) :: VesselVelocity !�������ɶ��˶��ٶ� m/s  m/s m/s rad/s rad/s rad/s
+   INTEGER                       ,INTENT(IN   ) :: fairlead_num   !�������ɶȶ�Ӧ���¿ױ��
+   
+   TYPE(MD_MiscVarType)          ,INTENT(INOUT) :: m              ! INTENT(INOUT)
+   TYPE(MD_InputType),           INTENT(INOUT)  :: u              ! INTENT( OUT) : An initial guess for the input; input mesh must be defined
 
+   REAL(DbKi)                                   :: TransMat(3,3)  ! rotation matrix for setting fairlead positions correctly if there is initial platform rotation
+   INTEGER(IntKi)                               :: ErrStat2       ! Error status of the operation
+   CHARACTER(ErrMsgLen)                         :: ErrMsg2        ! Error message if ErrStat2 /= ErrID_None
+   REAL(ReKi)                                   :: Pos(3)         ! array for setting absolute fairlead positions in mesh
+
+   INTEGER(IntKi)                               :: I              ! index
+   INTEGER(IntKi)                               :: J              ! index
+   INTEGER(IntKi)                               :: K              ! index
+   
+  
+   !���¿�λ��
+   Pos(1) = m%ConnectList(m%FairIdList(fairlead_num))%conX ! set relative position of each fairlead i (I'm pretty sure this is just relative to ptfm origin)
+   Pos(2) = m%ConnectList(m%FairIdList(fairlead_num))%conY
+   Pos(3) = m%ConnectList(m%FairIdList(fairlead_num))%conZ
+   
+   
+   CALL SmllRotTrans('initial fairlead positions due to platform rotation', VesselFreedom(4),VesselFreedom(5),VesselFreedom(6), TransMat, '', ErrStat2, ErrMsg2)  ! account for possible platform rotation
+
+
+         ! Apply initial platform rotations and translations (fixed Jun 19, 2015)  TranslationDisp��ƫ����
+         u%PtFairleadDisplacement%TranslationDisp(1,fairlead_num) = VesselFreedom(1) + TransMat(1,1)*Pos(1) + TransMat(2,1)*Pos(2) + TransMat(3,1)*Pos(3) - Pos(1)
+         u%PtFairleadDisplacement%TranslationDisp(2,fairlead_num) = VesselFreedom(2) + TransMat(1,2)*Pos(1) + TransMat(2,2)*Pos(2) + TransMat(3,2)*Pos(3) - Pos(2)
+         u%PtFairleadDisplacement%TranslationDisp(3,fairlead_num) = VesselFreedom(3) + TransMat(1,3)*Pos(1) + TransMat(2,3)*Pos(2) + TransMat(3,3)*Pos(3) - Pos(3)
+
+         !ƽ���ٶ�
+         u%PtFairleadDisplacement%TranslationVel(1,fairlead_num) = VesselVelocity(1)
+         u%PtFairleadDisplacement%TranslationVel(2,fairlead_num) = VesselVelocity(2)
+         u%PtFairleadDisplacement%TranslationVel(3,fairlead_num) = VesselVelocity(3)
+         !��ת�ٶ�
+         u%PtFairleadDisplacement%RotationVel(1,fairlead_num) = VesselVelocity(4)
+         u%PtFairleadDisplacement%RotationVel(2,fairlead_num) = VesselVelocity(5)
+         u%PtFairleadDisplacement%RotationVel(3,fairlead_num) = VesselVelocity(6)
+   
+   END SUBROUTINE Set_Vessel_Freedom
+    
+   
+   !=========================================   Set_Vessel_Freedom_Init   ===================================
+   !��ҵ����ʼλ���趨
+   
+   SUBROUTINE Set_Vessel_Freedom_Init(InitInp, VesselFreedom_Init,fairlead_num)
+   
+   REAL  , DIMENSION(1:6)        ,INTENT(IN   ) :: VesselFreedom_Init  !����ʼ�����ɶ� m m m rad rad rad
+   INTEGER                       ,INTENT(IN   ) :: fairlead_num   !�������ɶȶ�Ӧ���¿ױ��
+   
+   TYPE(MD_InitInputType),       INTENT(INOUT)  :: InitInp     ! INTENT(INOUT) : Input data for initialization routine
+   INTEGER                                      :: I
+   
+   
+   DO I = 1,6
+   InitInp%PtfmInit(fairlead_num,I) = VesselFreedom_Init(I)
+   END DO
+   
+
+  
+   END SUBROUTINE Set_Vessel_Freedom_Init 
+    
+   
+   
+   !=========================================   Set_Line_length   ===================================
+   !�շ��¿���
+   SUBROUTINE Set_Line_length(m,dtime,Line_num,Winch)
+   
+   
+   TYPE(MD_MiscVarType)          ,INTENT(INOUT) :: m           ! INTENT(INOUT)
+   REAL(DbKi)                    , INTENT(IN   ):: dtime       ! fixed/constant global time step
+   INTEGER                       ,INTENT(IN   ) :: Line_num   !�������ɶȶ�Ӧ���¿ױ��
+   REAL                          ,INTENT(IN   ) :: Winch  !�ʳ��ٶ� m/min
+   
+   REAL                                         :: delength
+   
+   
+   delength = Winch/60/(1/dtime)
+   
+       !�γ���
+   m%LineList(Line_num)%l = m%LineList(Line_num)%l + delength / m%LineList(Line_num)%N
+   
+   END SUBROUTINE Set_Line_length
+   
+   !=========================================   Line_OUT   ===================================
+   !�����������
+   SUBROUTINE Line_OUT(m,Line1,Line2,Line3,Line4,Line5,Line6)
+   
+   TYPE(MD_MiscVarType)          ,INTENT(INOUT) :: m           ! INTENT(INOUT)
+   !INTEGER                       ,INTENT(IN   ) :: Line_num   !�������ɶȶ�Ӧ���¿ױ��
+   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line1!1����������
+   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line2!2����������
+   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line3!3����������
+   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line4!3����������
+   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line5!������9����������
+   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line6!������10����������
+   
+   INTEGER  :: i,j
+   
+   ALLOCATE ( Line1(3,m%LineList(1)%N+1))
+   ALLOCATE ( Line2(3,m%LineList(2)%N+1))
+   ALLOCATE ( Line3(3,m%LineList(3)%N+1))
+   ALLOCATE ( Line4(3,m%LineList(4)%N+1))
+   ALLOCATE ( Line5(3,m%LineList(5)%N+1))
+   ALLOCATE ( Line6(3,m%LineList(6)%N+1))
+   
+   DO i = 1,3
+            DO j = 0, m%LineList(i)%N                !����������
+                Line1(i,j+1) =  m%LineList(1)%r(i,j)
+                Line2(i,j+1) =  m%LineList(2)%r(i,j)
+                Line3(i,j+1) =  m%LineList(3)%r(i,j)
+                Line4(i,j+1) =  m%LineList(4)%r(i,j) 
+                Line5(i,j+1) =  m%LineList(5)%r(i,j)
+                Line6(i,j+1) =  m%LineList(6)%r(i,j)
+            END DO
+        END DO
+   
+
+  
+   END SUBROUTINE Line_OUT
+   
+   
+   !=========================================   FLines_OUT   ===================================
+   !���¿�xyz�����������
+   SUBROUTINE FLines_OUT(m,p,y,Flines1,Flines2,Flines3,Flines4)
+   
+   TYPE(MD_MiscVarType)          ,INTENT(INOUT) :: m           ! INTENT(INOUT)
+   TYPE(MD_ParameterType),       INTENT(INOUT)  :: p           ! INTENT( OUT) : Parameters
+   TYPE(MD_OutputType),          INTENT(INOUT)  :: y
+   !INTEGER                       ,INTENT(IN   ) :: Line_num   !�������ɶȶ�Ӧ���¿ױ��
+   REAL          ,INTENT(  OUT)     :: Flines1(3)!1������xyz�������
+   REAL          ,INTENT(  OUT)     :: Flines2(3)!2������xyz�������
+   REAL          ,INTENT(  OUT)     :: Flines3(3)!3������xyz�������
+   REAL          ,INTENT(  OUT)     :: Flines4(3)!4������xyz�������
+   INTEGER  :: i,j
+   
+   DO i = 1,3
+
+         Flines1(i) = y%PtFairleadLoad%Force(i,5)  !Field: Force vectors (3,NNodes)
+         Flines2(i) = y%PtFairleadLoad%Force(i,6)  !Field: Force vectors (3,NNodes)
+         Flines3(i) = y%PtFairleadLoad%Force(i,7)  !Field: Force vectors (3,NNodes)
+         Flines4(i) = y%PtFairleadLoad%Force(i,8)  !Field: Force vectors (3,NNodes)
+
+   END DO
+
+  
+   END SUBROUTINE FLines_OUT
+   
+   
+  
    !=========================================   MD_Init   ===================================
    SUBROUTINE MD_Init(InitInp, u, p, x, xd, z, other, y, m, DTcoupling, InitOut, ErrStat, ErrMsg)
 
       IMPLICIT NONE
-
+     
       TYPE(MD_InitInputType),       INTENT(INOUT)  :: InitInp     ! INTENT(INOUT) : Input data for initialization routine
       TYPE(MD_InputType),           INTENT(  OUT)  :: u           ! INTENT( OUT) : An initial guess for the input; input mesh must be defined
       TYPE(MD_ParameterType),       INTENT(  OUT)  :: p           ! INTENT( OUT) : Parameters
@@ -76,7 +236,8 @@ CONTAINS
 
       CHARACTER(MaxWrScrLen)                       :: Message
 
-
+ 
+      REAL          :: displaylocal
       ErrStat = ErrID_None
       ErrMsg  = ""
 
@@ -227,6 +388,7 @@ CONTAINS
                     Nnodes=p%NFairs                , &
                     TranslationDisp=.TRUE.         , &
                     TranslationVel=.TRUE.          , &
+                    RotationVel=.TRUE.          , &
                     ErrStat=ErrStat2                , &
                     ErrMess=ErrMsg2)
 
@@ -248,16 +410,16 @@ CONTAINS
 
 
          ! set offset position of each node to according to initial platform position
-         CALL SmllRotTrans('initial fairlead positions due to platform rotation', InitInp%PtfmInit(4),InitInp%PtfmInit(5),InitInp%PtfmInit(6), TransMat, '', ErrStat2, ErrMsg2)  ! account for possible platform rotation
+         CALL SmllRotTrans('initial fairlead positions due to platform rotation', InitInp%PtfmInit(i,4),InitInp%PtfmInit(i,5),InitInp%PtfmInit(i,6), TransMat, '', ErrStat2, ErrMsg2)  ! account for possible platform rotation
 
          CALL CheckError( ErrStat2, ErrMsg2 )
          IF (ErrStat >= AbortErrLev) RETURN
 
-         ! Apply initial platform rotations and translations (fixed Jun 19, 2015)
-         u%PtFairleadDisplacement%TranslationDisp(1,i) = InitInp%PtfmInit(1) + Transmat(1,1)*Pos(1) + Transmat(2,1)*Pos(2) + TransMat(3,1)*Pos(3) - Pos(1)
-         u%PtFairleadDisplacement%TranslationDisp(2,i) = InitInp%PtfmInit(2) + Transmat(1,2)*Pos(1) + Transmat(2,2)*Pos(2) + TransMat(3,2)*Pos(3) - Pos(2)
-         u%PtFairleadDisplacement%TranslationDisp(3,i) = InitInp%PtfmInit(3) + Transmat(1,3)*Pos(1) + Transmat(2,3)*Pos(2) + TransMat(3,3)*Pos(3) - Pos(3)
-
+         ! Apply initial platform rotations and translations (fixed Jun 19, 2015)  TranslationDisp��ƫ����
+         u%PtFairleadDisplacement%TranslationDisp(1,i) = InitInp%PtfmInit(i,1) + Transmat(1,1)*Pos(1) + Transmat(2,1)*Pos(2) + TransMat(3,1)*Pos(3) - Pos(1)
+         u%PtFairleadDisplacement%TranslationDisp(2,i) = InitInp%PtfmInit(i,2) + Transmat(1,2)*Pos(1) + Transmat(2,2)*Pos(2) + TransMat(3,2)*Pos(3) - Pos(2)
+         u%PtFairleadDisplacement%TranslationDisp(3,i) = InitInp%PtfmInit(i,3) + Transmat(1,3)*Pos(1) + Transmat(2,3)*Pos(2) + TransMat(3,3)*Pos(3) - Pos(3)
+         displaylocal = u%PtFairleadDisplacement%TranslationDisp(1,i);
          ! set velocity of each node to zero
          u%PtFairleadDisplacement%TranslationVel(1,i) = 0.0_DbKi
          u%PtFairleadDisplacement%TranslationVel(2,i) = 0.0_DbKi
@@ -627,7 +789,7 @@ CONTAINS
 
       INTEGER(IntKi)                                 :: ErrStat2   ! Error status of the operation
       CHARACTER(ErrMsgLen)                           :: ErrMsg2    ! Error message if ErrStat2 /= ErrID_None
-
+REAL          :: displaylocal
 
       ! below updated to make sure outputs are current (based on provided x and u)  - similar to what's in UpdateStates
 
@@ -636,6 +798,8 @@ CONTAINS
          DO J = 1,3
             m%ConnectList(m%FairIdList(I))%r(J)  = u%PtFairleadDisplacement%Position(J,I) + u%PtFairleadDisplacement%TranslationDisp(J,I)
             m%ConnectList(m%FairIdList(I))%rd(J) = u%PtFairleadDisplacement%TranslationVel(J,I)  ! is this right? <<<
+            displaylocal = u%PtFairleadDisplacement%TranslationDisp(J,I)
+            displaylocal = u%PtFairleadDisplacement%Position(J,I)
          END DO
       END DO
 
@@ -716,7 +880,7 @@ CONTAINS
       INTEGER(IntKi)                                     :: Istart  ! start index of line/connect in state vector
       INTEGER(IntKi)                                     :: Iend    ! end index of line/connect in state vector
 
-
+REAL          :: displaylocal
       ! Initialize ErrStat
       ErrStat = ErrID_None
       ErrMsg = ""
@@ -746,6 +910,8 @@ CONTAINS
          DO J = 1,3
             m%ConnectList(m%FairIdList(K))%r(J)  = u%PtFairleadDisplacement%Position(J,K) + u%PtFairleadDisplacement%TranslationDisp(J,K)
             m%ConnectList(m%FairIdList(K))%rd(J) = u%PtFairleadDisplacement%TranslationVel(J,K)  ! is this right? <<<
+            displaylocal = u%PtFairleadDisplacement%TranslationDisp(J,K)
+            displaylocal = u%PtFairleadDisplacement%Position(J,K)
          END DO
       END DO
 

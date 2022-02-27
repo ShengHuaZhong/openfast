@@ -184,6 +184,7 @@ subroutine FAST_Start(iTurb, NumInputs_c, NumOutputs_c, InputAry, OutputAry, Err
    INTEGER(IntKi)                        :: ErrStat2                                ! Error status
    CHARACTER(IntfStrLen-1)               :: ErrMsg2                                 ! Error message  (this needs to be static so that it will print in Matlab's mex library)
    
+   
       ! initialize variables:   
    n_t_global = 0
 
@@ -195,7 +196,7 @@ subroutine FAST_Start(iTurb, NumInputs_c, NumOutputs_c, InputAry, OutputAry, Err
       RETURN
    END IF
 
-   CALL FAST_SetExternalInputs(iTurb, NumInputs_c, InputAry, Turbine(iTurb)%m_FAST)
+   
 
 #endif      
    !...............................................................................................................................

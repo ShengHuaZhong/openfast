@@ -26,6 +26,49 @@ PROGRAM MoorDyn_Driver
 
    IMPLICIT NONE 
 
+    !__________________________________________________________________________�������________________________________________________________________
+     !1�Ŵ���1����������ϵ��+ +������
+     !2�Ŵ���1����������ϵ��+ -������
+     !3�Ŵ���1����������ϵ��- +������
+     !4�Ŵ���1����������ϵ��- -������
+   
+     !����ʼ�����ɶ�
+      REAL  , DIMENSION(1:6)        :: VesselFreedom1_Init!1�Ŵ���ʼ�����ɶ� m m m rad rad rad
+      REAL  , DIMENSION(1:6)        :: VesselFreedom2_Init!2�Ŵ���ʼ�����ɶ� m m m rad rad rad
+      REAL  , DIMENSION(1:6)        :: VesselFreedom3_Init!3�Ŵ���ʼ�����ɶ� m m m rad rad rad
+      REAL  , DIMENSION(1:6)        :: VesselFreedom4_Init!4�Ŵ���ʼ�����ɶ� m m m rad rad rad
+      
+      !�������ɶ�
+      REAL  , DIMENSION(1:6)        :: VesselFreedom1!1�Ŵ������ɶ� m m m rad rad rad
+      REAL  , DIMENSION(1:6)        :: VesselFreedom2!2�Ŵ������ɶ� m m m rad rad rad
+      REAL  , DIMENSION(1:6)        :: VesselFreedom3!3�Ŵ������ɶ� m m m rad rad rad
+      REAL  , DIMENSION(1:6)        :: VesselFreedom4!4�Ŵ������ɶ� m m m rad rad rad
+      !���˶��ٶ� 
+      REAL  , DIMENSION(1:6)        :: VesselFairleadVe1!һ�����ֵ��¿�ƽ���ٶ� m/s  m/s m/s rad/s rad/s rad/s
+      REAL  , DIMENSION(1:6)        :: VesselFairleadVe2!�������ֵ��¿�ƽ���ٶ� m/s  m/s m/s rad/s rad/s rad/s
+      REAL  , DIMENSION(1:6)        :: VesselFairleadVe3!�������ֵ��¿�ƽ���ٶ� m/s  m/s m/s rad/s rad/s rad/s
+      REAL  , DIMENSION(1:6)        :: VesselFairleadVe4!�ĺ����ֵ��¿�ƽ���ٶ� m/s  m/s m/s rad/s rad/s rad/s
+     
+
+      !�ʳ��ٶ�  >0��ʾ���� <0 ��ʾ����
+      REAL                          :: WhichSpeed9       !������9�Žʳ��ٶ�m/min   
+      REAL                          :: WhichSpeed10       !������10�Žʳ��ٶ�m/min
+      !__________________________________________________________________________�������________________________________________________________________
+      !��������
+      REAL  , DIMENSION(:,:), ALLOCATABLE        :: Line1!1����������
+      REAL  , DIMENSION(:,:), ALLOCATABLE        :: Line2!2����������
+      REAL  , DIMENSION(:,:), ALLOCATABLE        :: Line3!3����������
+      REAL  , DIMENSION(:,:), ALLOCATABLE        :: Line4!3����������
+      REAL  , DIMENSION(:,:), ALLOCATABLE        :: Line5!������9����������
+      REAL  , DIMENSION(:,:), ALLOCATABLE        :: Line6!������10����������
+      !����������(���ظ�����)
+      REAL  , DIMENSION(3)          :: Flines1!1�����ֵ��¿�XYZ�������[N]
+      REAL  , DIMENSION(3)          :: Flines2!2�����ֵ��¿�XYZ�������[N]
+      REAL  , DIMENSION(3)          :: Flines3!3�����ֵ��¿�XYZ�������[N]
+      REAL  , DIMENSION(3)          :: Flines4!4�����ֵ��¿�XYZ�������[N]
+     !__________________________________________________________________________�������________________________________________________________________
+   
+   
    INTEGER(IntKi)                        :: ErrStat          ! Status of error message   
    CHARACTER(1024)                       :: ErrMsg           ! Error message if ErrStat /= ErrID_None
 
@@ -101,13 +144,46 @@ PROGRAM MoorDyn_Driver
    !MD_InitInput%NStepWave   = 1        ! an arbitrary number > 0 (to set the size of the wave data, which currently contains all zero values)     
    MD_InitInput%g           = 9.81     ! This need to be according to g used in ElastoDyn 
    MD_InitInput%rhoW        = 1025     ! This needs to be set according to seawater density in HydroDyn      
-   MD_InitInput%PtfmInit    = 0.0
+   !MD_InitInput%PtfmInit    = 0.0
    MD_InitInput%RootName    = "MoorDyn.MD"
    
    CALL GetNewUnit( Un )
    OPEN(Unit=Un,FILE='MD.out',STATUS='UNKNOWN')
+    !MD_InitInput%PtfmInit(1) = 1
+    !MD_InitInput%PtfmInit(2) = 2
+    !MD_InitInput%PtfmInit(3) = 3
+   
+    
+    !����ʼ�����ɶ�--��ʼ���� ,�������ֳ�ʼ�������趨����һ��
+    VesselFreedom1_Init = (/306.0, 265.0, 0.0, 0.0, 0.0,   0.0/)
+    !VesselFreedom1_Init = (/1.0, 2.0, 0.0, 0.0, 0.0,   0.0/)
+    VesselFreedom2_Init = (/306.0, -250.0, 0.0, 0.0, 0.0,  0.0/)
+    VesselFreedom3_Init = (/-321.0, 227.0, 0.0, 0.0, 0.0,  0.0/)
+    VesselFreedom4_Init = (/-201.0, -290.0, 0.0, 0.0, 0.0, 0.0/)
   
-   ! call the initialization routine
+   !���˶��ٶ�--ʵʱ����
+   VesselFairleadVe1 = (/0.1,0.0,0.0,0.0,0.0,0.0/)
+   VesselFairleadVe2 = (/0.1,0.0,0.0,0.0,0.0,0.0/)
+   VesselFairleadVe3 = (/0.05,0.0,0.0,0.0,0.0,0.0/)
+   VesselFairleadVe4 = (/0.05,0.0,0.0,0.0,0.0,0.0/)
+    
+   !�������ɶ�--ʵʱ����
+   VesselFreedom1 = (/306.0, 265.0, 0.0, 0.0, 0.0, 0.0/)
+   !VesselFreedom1 = (/1.0, 2.0, 0.0, 0.0, 0.0,   0.0/)
+   VesselFreedom2 = (/306.0, -250.0, 0.0, 0.0, 0.0,  0.0/)
+   VesselFreedom3 = (/-321.0, 227.0, 0.0, 0.0, 0.0,  0.0/)
+   VesselFreedom4 = (/-201.0, -290.0, 0.0, 0.0, 0.0, 0.0/)
+    
+  !����1-4��ʼ�����ɶ��趨
+  CALL Set_Vessel_Freedom_Init(MD_InitInput, VesselFreedom1_Init,5)
+  
+  CALL Set_Vessel_Freedom_Init(MD_InitInput, VesselFreedom2_Init,6)
+  
+  CALL Set_Vessel_Freedom_Init(MD_InitInput, VesselFreedom3_Init,7)
+  
+  CALL Set_Vessel_Freedom_Init(MD_InitInput, VesselFreedom4_Init,8)
+  
+  ! call the initialization routine
    CALL MD_Init( MD_InitInput      , &
                    MD_Input(1)        , & 
                    MD_Parameter       , &
@@ -227,7 +303,7 @@ PROGRAM MoorDyn_Driver
       DO i = 1,nt
          
          t = dtC*(i-1)
-         
+
          ! interpolation routine
          DO iIn = 1,ntIn-1      
             IF (PtfmMotIn(iIn+1, 1) > t) THEN
@@ -258,7 +334,6 @@ PROGRAM MoorDyn_Driver
    ! ---------------------------------------------------------------
    ! Set the initial input values
    ! ---------------------------------------------------------------
-   
    ! start with zeros   >>> or should this be the initial row of DOFs? <<<
    MD_Input(1)%PtFairleadDisplacement%TranslationDisp = 0.0_ReKi   
    MD_Input(1)%DeltaL = 0.0_ReKi
@@ -274,7 +349,7 @@ PROGRAM MoorDyn_Driver
 
 
    t = 0
-
+   
    CALL MD_CalcOutput(  t                  , &
                         MD_Input(1)        , &
                         MD_Parameter       , &
@@ -284,7 +359,7 @@ PROGRAM MoorDyn_Driver
                         MD_OtherState      , &
                         MD_Output          , &
                         MD_MiscVar         , &        
-                        ErrStat              , &
+                        ErrStat            , &
                         ErrMsg )
    IF ( ErrStat .NE. ErrID_None ) THEN
       IF (ErrStat >=AbortErrLev) CALL ProgAbort(ErrMsg)
@@ -305,18 +380,8 @@ PROGRAM MoorDyn_Driver
       t = dtC*(i-1)
 
       MD_InputTimes(1) = t + dtC
-      !MD_InputTimes(2) = MD_InputTimes(1) - dtC 
-      !MD_InputTimes(3) = MD_InputTimes(2) - dtC
 
-      ! apply platform translations (neglecting rotations for now)
-      MD_Input(1)%PtFairleadDisplacement%TranslationDisp(1,1) = PtfmMot(i, 1)  
-      MD_Input(1)%PtFairleadDisplacement%TranslationDisp(1,2) = PtfmMot(i, 2)  
-      MD_Input(1)%PtFairleadDisplacement%TranslationDisp(1,3) = PtfmMot(i, 3)  
-
-      !MD_Input(2)%PtFairleadDisplacement%TranslationDisp(1,1) = .001*n_t_global  
-      !MD_Input(3)%PtFairleadDisplacement%TranslationDisp(1,1) = .001*n_t_global  
-      
-      ! what about velocities??
+    
       
       ! also provide any active tensioning commands (just using delta L, and finite differencing to get derivative)
       DO j = 1,ncIn-6
@@ -330,7 +395,20 @@ PROGRAM MoorDyn_Driver
          END IF
          
       END DO
+      !����1-4�����ɶȼ��ٶ��趨
+      CALL Set_Vessel_Freedom(MD_Input(1),MD_MiscVar,VesselFreedom1,VesselFairleadVe1,5)
       
+      CALL Set_Vessel_Freedom(MD_Input(1),MD_MiscVar,VesselFreedom2,VesselFairleadVe2,6)
+      
+      CALL Set_Vessel_Freedom(MD_Input(1),MD_MiscVar,VesselFreedom3,VesselFairleadVe3,7)
+      
+      CALL Set_Vessel_Freedom(MD_Input(1),MD_MiscVar,VesselFreedom4,VesselFairleadVe4,8)
+      WhichSpeed9 = -10
+      WhichSpeed9 = -10
+      !�趨������9��10���³���
+      CALL Set_Line_length(MD_MiscVar,dtC, 5,WhichSpeed9)
+      
+      CALL Set_Line_length(MD_MiscVar,dtC, 6,WhichSpeed9)
       ! --------------------------------- update states ---------------------------------
       CALL  MD_UpdateStates(  t                  , &
                              nt                 , &
@@ -369,10 +447,18 @@ PROGRAM MoorDyn_Driver
          IF (ErrStat >=AbortErrLev) CALL ProgAbort(ErrMsg)
          CALL WrScr( ErrMsg )
       END IF
-  
-
-      WRITE(Un,100) t, MD_Input(1)%PtFairleadDisplacement%TranslationDisp(1,1), &
-      ((MD_Output%PtFairleadLoad%Force(k,j), k=1,3),j=1,3)
+      !4�����¼�9��10��ê���������
+      ALLOCATE ( Line1(3,MD_MiscVar%LineList(1)%N+1))
+      ALLOCATE ( Line2(3,MD_MiscVar%LineList(2)%N+1))
+      ALLOCATE ( Line3(3,MD_MiscVar%LineList(3)%N+1))
+      ALLOCATE ( Line4(3,MD_MiscVar%LineList(4)%N+1))
+      ALLOCATE ( Line5(3,MD_MiscVar%LineList(5)%N+1))
+      ALLOCATE ( Line6(3,MD_MiscVar%LineList(6)%N+1))
+      CALL Line_OUT(MD_MiscVar,Line1,Line2,Line3,Line4,Line5,Line6)
+      !4�����µ��¿��������
+      CALL FLines_OUT(MD_MiscVar,MD_Parameter,MD_Output,Flines1,Flines2,Flines3,Flines4)
+      
+      WRITE(Un,100) t, MD_Input(1)%PtFairleadDisplacement%TranslationDisp(1,1), ((MD_Output%PtFairleadLoad%Force(k,j), k=1,3),j=1,1)
       !WRITE(*,*) t_global
      
    END DO

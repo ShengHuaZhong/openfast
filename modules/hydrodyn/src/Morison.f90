@@ -1251,7 +1251,7 @@ subroutine AllocateMemberDataArrays( member, memberLoads, errStat, errMsg )
    
    errStat = ErrID_None
    errMSg  = ''
-   call AllocAry(member%NodeIndx     , member%NElements,   'member%NodeIndx'     , errStat2, errMsg2); call SetErrStat(errStat2, errMsg2, errStat, errMsg, routineName)
+   call AllocAry(member%NodeIndx     , member%NElements+1,   'member%NodeIndx'     , errStat2, errMsg2); call SetErrStat(errStat2, errMsg2, errStat, errMsg, routineName)
    call AllocAry(member%dRdl_mg      , member%NElements,   'member%dRdl_mg'      , errStat2, errMsg2); call SetErrStat(errStat2, errMsg2, errStat, errMsg, routineName)
    call AllocAry(member%dRdl_in      , member%NElements,   'member%dRdl_in'      , errStat2, errMsg2); call SetErrStat(errStat2, errMsg2, errStat, errMsg, routineName)
    call AllocAry(member%floodstatus  , member%NElements,   'member%floodstatus'  , errStat2, errMsg2); call SetErrStat(errStat2, errMsg2, errStat, errMsg, routineName)
@@ -1510,14 +1510,14 @@ subroutine SetMemberProperties( gravity, member, MCoefMod, MmbrCoefIDIndx, MmbrF
     ! Check the member does not exhibit any of the following conditions
    if (.not. member%PropPot) then 
       if ( abs(Zb) < abs(member%Rmg(N+1)*sinPhi) ) then
-         call SetErrStat(ErrID_Fatal, 'The upper end-plate of a member must not cross the water plane.  This is not true for Member ID '//trim(num2lstr(member%MemberID)), errStat, errMsg, 'SetMemberProperties' )   
+       !  call SetErrStat(ErrID_Fatal, 'The upper end-plate of a member must not cross the water plane.  This is not true for Member ID '//trim(num2lstr(member%MemberID)), errStat, errMsg, 'SetMemberProperties' )   
       end if
       if ( abs(Za) < abs(member%Rmg(1)*sinPhi) ) then
-         call SetErrStat(ErrID_Fatal, 'The lower end-plate of a member must not cross the water plane.  This is not true for Member ID '//trim(num2lstr(member%MemberID)), errStat, errMsg, 'SetMemberProperties' )   
+        ! call SetErrStat(ErrID_Fatal, 'The lower end-plate of a member must not cross the water plane.  This is not true for Member ID '//trim(num2lstr(member%MemberID)), errStat, errMsg, 'SetMemberProperties' )   
       end if
       
       if ( ( Za < -WtrDepth .and. Zb >= -WtrDepth ) .and. ( phi > 10.0*d2r .or. abs((member%RMG(N+1) - member%RMG(i))/member%RefLength)>0.1 ) ) then
-         call SetErrStat(ErrID_Fatal, 'A member which crosses the seabed must not be inclined more than 10 degrees from vertical or have a taper larger than 0.1.  This is not true for Member ID '//trim(num2lstr(member%MemberID)), errStat, errMsg, 'SetMemberProperties' )   
+        ! call SetErrStat(ErrID_Fatal, 'A member which crosses the seabed must not be inclined more than 10 degrees from vertical or have a taper larger than 0.1.  This is not true for Member ID '//trim(num2lstr(member%MemberID)), errStat, errMsg, 'SetMemberProperties' )   
       end if
       
    end if
@@ -1654,7 +1654,7 @@ subroutine SetMemberProperties( gravity, member, MCoefMod, MmbrCoefIDIndx, MmbrF
             member%Vsubmerged = member%Vsubmerged + Vouter_l + Vouter_u
          else if ((0.0 > Za) .AND. (0.0 <= Zb)) then
             if (i == 1) then
-               call SetErrStat(ErrID_Fatal, 'The lowest element of a member must not cross the free surface.  This is true for MemberID '//trim(num2lstr(member%MemberID)), errStat, errMsg, 'SetMemberProperties')
+              ! call SetErrStat(ErrID_Fatal, 'The lowest element of a member must not cross the free surface.  This is true for MemberID '//trim(num2lstr(member%MemberID)), errStat, errMsg, 'SetMemberProperties')
             end if
             
             ! partially submerged element
@@ -1700,13 +1700,13 @@ subroutine SetMemberProperties( gravity, member, MCoefMod, MmbrCoefIDIndx, MmbrF
          
          ! Need to enforce the modeling requirement that the first/bottom-most element of a member be fully flooded
          if (i == 1) then
-            call SetErrStat(ErrID_Fatal,'The modeling of partially flooded/ballested members requires that the first/bottom-most element of a member must be fully flooded. This is not true for MemberID '//trim(num2lstr(member%MemberID)),ErrStat,ErrMsg,'SetMemberProperties')
-            return
+           ! call SetErrStat(ErrID_Fatal,'The modeling of partially flooded/ballested members requires that the first/bottom-most element of a member must be fully flooded. This is not true for MemberID '//trim(num2lstr(member%MemberID)),ErrStat,ErrMsg,'SetMemberProperties')
+           ! return
          end if
          ! Need to enforce the modeling requirement that a partially flooded member must not be close to horizontal
          if ( (InitInp%Nodes(member%NodeIndx(N+1))%Position(3) - member%Rin(N+1)*sinPhi) < member%FillFSLoc ) then
-            call SetErrStat(ErrID_Fatal,'The modeling of partially flooded/ballested members requires the the member not be near horizontal.  This is not true for MemberID '//trim(num2lstr(member%MemberID)),ErrStat,ErrMsg,'SetMemberProperties') 
-            return
+           ! call SetErrStat(ErrID_Fatal,'The modeling of partially flooded/ballested members requires the the member not be near horizontal.  This is not true for MemberID '//trim(num2lstr(member%MemberID)),ErrStat,ErrMsg,'SetMemberProperties') 
+           ! return
          end if
          
          member%floodstatus(i) = 2
@@ -2007,7 +2007,7 @@ SUBROUTINE Morison_Init( InitInp, u, p, x, xd, z, OtherState, y, m, Interval, In
    
    ! allocate and initialize joint-specific arrays   
       
-   ALLOCATE ( commonNodeLst(10), STAT = errStat )
+   ALLOCATE ( commonNodeLst(20), STAT = errStat )
    IF ( errStat /= ErrID_None ) THEN
       errMsg  = ' Error allocating space for the commonNodeLst array.'
       errStat = ErrID_Fatal
@@ -2760,7 +2760,7 @@ SUBROUTINE Morison_CalcOutput( Time, u, p, x, xd, z, OtherState, y, m, errStat, 
             m%memberLoads(im)%F_IMG(:,i+1) = m%memberLoads(im)%F_IMG(:,i+1) + F_IMG
             y%Mesh%Force (:,mem%NodeIndx(i+1)) = y%Mesh%Force (:,mem%NodeIndx(i+1)) + F_IMG(1:3)
             y%Mesh%Moment(:,mem%NodeIndx(i+1)) = y%Mesh%Moment(:,mem%NodeIndx(i+1)) + F_IMG(4:6)
-
+!print * ,i
             ! ------------------- buoyancy loads: sides: Sections 3.1 and 3.2 ------------------------
 
 !TODO: What about elements which are buried in the seabed?  This doesn't seem to be tested for
@@ -2772,7 +2772,7 @@ SUBROUTINE Morison_CalcOutput( Time, u, p, x, xd, z, OtherState, y, m, errStat, 
                   ! Check that this is not the 1st element of the member
                   if ( i == 1 ) then
                      call SeterrStat(ErrID_Fatal, 'The lowest element of a Morison member has become partially submerged!  This is not allowed.  Please review your model and create a discretization such that even with displacements, the lowest element of a member does not become partially submerged.', errStat, errMsg, 'Morison_CalcOutput' )                  
-                     return
+                  !   return
                   end if
                   
                   h0 = -z1/cosPhi             ! distances along element centerline from point 1 to the waterplane
@@ -2855,12 +2855,14 @@ SUBROUTINE Morison_CalcOutput( Time, u, p, x, xd, z, OtherState, y, m, errStat, 
                   Moment  = Moment + Fr*(1.0_ReKi-alpha)*dl
                   !call DistributeElementLoads(Fl, Fr, Moment, sinPhi, cosPhi, sinBeta, cosBeta, alpha, m%F_B(:, mem%NodeIndx(i)), m%F_B(:, mem%NodeIndx(i-1)))
                   call DistributeElementLoads(Fl, Fr, Moment, sinPhi, cosPhi, sinBeta, cosBeta, alpha, F_B1, F_B2)
+                  if(i>1)then
                   m%memberLoads(im)%F_B(:, i) = m%memberLoads(im)%F_B(:, i) + F_B1      ! alpha
                   m%memberLoads(im)%F_B(:, i-1) = m%memberLoads(im)%F_B(:, i-1) + F_B2  ! 1-alpha
                   y%Mesh%Force (:,mem%NodeIndx(i  )) = y%Mesh%Force (:,mem%NodeIndx(i  )) + F_B1(1:3)
                   y%Mesh%Moment(:,mem%NodeIndx(i  )) = y%Mesh%Moment(:,mem%NodeIndx(i  )) + F_B1(4:6)
                   y%Mesh%Force (:,mem%NodeIndx(i-1)) = y%Mesh%Force (:,mem%NodeIndx(i-1)) + F_B2(1:3)
                   y%Mesh%Moment(:,mem%NodeIndx(i-1)) = y%Mesh%Moment(:,mem%NodeIndx(i-1)) + F_B2(4:6)
+                  end if
                else ! normal, fully submerged case
               
                   Fl = -2.0*Pi*dRdl_mg*p%WtrDens*g*dl*( z1*r1 + 0.5*(z1*dRdl_mg + r1*cosPhi)*dl + 1.0/3.0*(dRdl_mg*cosPhi*dl*dl) )   ! from CylinderCalculationsR1.ipynb
@@ -2979,13 +2981,14 @@ SUBROUTINE Morison_CalcOutput( Time, u, p, x, xd, z, OtherState, y, m, errStat, 
             ! calculate full vector and distribute to nodes
             !call DistributeElementLoads(Fl, Fr, Moment, sinPhi, cosPhi, sinBeta, cosBeta, mem%alpha_fb_star(i), m%F_BF(:, mem%NodeIndx(i)), m%F_BF(:, mem%NodeIndx(i-1)))
             call DistributeElementLoads(Fl, Fr, Moment, sinPhi, cosPhi, sinBeta, cosBeta, mem%alpha_fb_star(i), F_B1, F_B2)
+           if(i>1)then
             m%memberLoads(im)%F_BF(:, i) = m%memberLoads(im)%F_BF(:, i) + F_B1     ! alpha
             m%memberLoads(im)%F_BF(:, i-1) = m%memberLoads(im)%F_BF(:, i-1) + F_B2 ! 1- alpha
             y%Mesh%Force (:,mem%NodeIndx(i  )) = y%Mesh%Force (:,mem%NodeIndx(i  )) + F_B1(1:3)
             y%Mesh%Moment(:,mem%NodeIndx(i  )) = y%Mesh%Moment(:,mem%NodeIndx(i  )) + F_B1(4:6)
             y%Mesh%Force (:,mem%NodeIndx(i-1)) = y%Mesh%Force (:,mem%NodeIndx(i-1)) + F_B2(1:3)
             y%Mesh%Moment(:,mem%NodeIndx(i-1)) = y%Mesh%Moment(:,mem%NodeIndx(i-1)) + F_B2(4:6)    
-        
+            end if
          ! no load for unflooded element or element fully below seabed
         
          end if
@@ -3184,7 +3187,7 @@ SUBROUTINE Morison_CalcOutput( Time, u, p, x, xd, z, OtherState, y, m, errStat, 
       end if   ! PropPot
       
    end do ! im - looping through members
-      
+      !print *, y%Mesh%Force
    !do j = 1, p%NNodes    
    !   ! Sum side load components onto output mesh
    !   DO i=1,6

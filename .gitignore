@@ -26,6 +26,7 @@
 # Executables
 *.exe
 *.out
+*.tmp
 *.app
 __pycache__/*
 *.pyc
@@ -35,6 +36,7 @@ build*/
 _build*/
 install/
 vs-build/
+debug_build/
 
 # OS and IDE specific files
 .DS_Store

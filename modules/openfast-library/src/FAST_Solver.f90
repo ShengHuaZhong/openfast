@@ -1250,7 +1250,15 @@ SUBROUTINE Transfer_PlatformMotion_to_HD( PlatformMotion, u_HD, MeshMapData, Err
    ! Transfer the ED outputs of the platform motions to the HD input of which represents the same data
    CALL Transfer_Point_to_Point( PlatformMotion, u_HD%PRPMesh, MeshMapData%ED_P_2_HD_PRP_P, ErrStat2, ErrMsg2 )
          CALL SetErrStat(ErrStat2,ErrMsg2,ErrStat, ErrMsg,'Transfer_ED_to_HD (u_HD%PRPMesh)' )
-         
+
+         !u_HD%PRPMesh%Force = 0
+         !u_HD%PRPMesh%Moment = 0
+         !u_HD%PRPMesh%Orientation = 0
+         !u_HD%PRPMesh%TranslationDisp = 0
+         !u_HD%PRPMesh%TranslationVel = 0
+         !u_HD%PRPMesh%RotationVel = 0
+         !u_HD%PRPMesh%RotationAcc = 0
+         !u_HD%PRPMesh%TranslationAcc = 0
    IF ( u_HD%WAMITMesh%Committed ) THEN
  
       ! These are the motions for the lumped point loads associated the WAMIT body(ies) and include: hydrostatics, radiation memory effect,
@@ -1268,6 +1276,14 @@ SUBROUTINE Transfer_PlatformMotion_to_HD( PlatformMotion, u_HD, MeshMapData, Err
       ! These are the motions for the lumped point loads associated viscous drag on the WAMIT body and/or filled/flooded lumped forces of the WAMIT body
       CALL Transfer_Point_to_Point( PlatformMotion, u_HD%Morison%Mesh, MeshMapData%ED_P_2_HD_M_P, ErrStat2, ErrMsg2 )
          CALL SetErrStat(ErrStat2,ErrMsg2,ErrStat, ErrMsg, RoutineName//' (u_HD%Morison%Mesh)' )
+         !u_HD%Morison%Mesh%Force = 0
+         !u_HD%Morison%Mesh%Moment = 0
+         !u_HD%Morison%Mesh%Orientation = 0
+         !u_HD%Morison%Mesh%TranslationDisp = 0
+         !u_HD%Morison%Mesh%TranslationVel = 0
+         !u_HD%Morison%Mesh%RotationVel = 0
+         !u_HD%Morison%Mesh%RotationAcc = 0
+         !u_HD%Morison%Mesh%TranslationAcc = 0
          
    END IF
    
@@ -1699,7 +1715,7 @@ SUBROUTINE ED_HD_InputOutputSolve(  this_time, p_FAST, calcJacobian &
     
    ErrStat = ErrID_None
    ErrMsg  = ""
-
+   
    ! note this routine should be called only
    ! IF ( p_FAST%CompHydro == Module_HD .AND. p_FAST%CompSub == Module_None .and. p_FAST%CompElast /= Module_BD ) 
                            
@@ -5263,6 +5279,7 @@ SUBROUTINE SolveOption1(this_time, this_state, calcJacobian, p_FAST, ED, BD, HD,
                                     , MAPp%Input(1), MAPp%y, FEAM%Input(1), FEAM%y, MD%Input(1), MD%y, SrvD%Input(1), SrvD%y &          
                                     , MeshMapData , ErrStat2, ErrMsg2, WriteThisStep )
          CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )
+          
                                                                   
    END IF ! HD, BD, and/or SD coupled to ElastoDyn
                          
@@ -5688,6 +5705,30 @@ SUBROUTINE FAST_AdvanceStates( t_initial, n_t_global, p_FAST, m_FAST, ED, BD, Sr
    
    REAL(DbKi)                              :: t_module            ! Current simulation time for module 
    REAL(DbKi)                              :: t_global_next       ! Simulation time for computing outputs
+   REAL(ReKi), DIMENSION(6)                :: Ship1_Freedom
+   REAL(ReKi), DIMENSION(6)                :: Ship1_Velocity
+   REAL(ReKi), DIMENSION(6)                :: Ship2_Freedom
+   REAL(ReKi), DIMENSION(6)                :: Ship2_Velocity
+   REAL(ReKi), DIMENSION(6)                :: Ship3_Freedom
+   REAL(ReKi), DIMENSION(6)                :: Ship3_Velocity
+   REAL(ReKi), DIMENSION(6)                :: Ship4_Freedom
+   REAL(ReKi), DIMENSION(6)                :: Ship4_Velocity
+   REAL(ReKi), DIMENSION(3)                :: Ship1_Line_Force
+   REAL(ReKi), DIMENSION(3)                :: Ship2_Line_Force
+   REAL(ReKi), DIMENSION(3)                :: Ship3_Line_Force
+   REAL(ReKi), DIMENSION(3)                :: Ship4_Line_Force
+
+   TYPE(Ship_PID_Type)                     :: Ship1_Control_Order
+   TYPE(Ship_PID_Type)                     :: Ship2_Control_Order
+   TYPE(Ship_PID_Type)                     :: Ship3_Control_Order
+   TYPE(Ship_PID_Type)                     :: Ship4_Control_Order
+   REAL(ReKi)                              :: Wave_Direction
+   REAL(ReKi)                              :: Current_Direction
+   REAL(ReKi)                              :: Current_Speed
+   REAL(ReKi)                              :: Mean_Wave_Height
+
+
+
    INTEGER(IntKi)                          :: j_ss                ! substep loop counter 
    INTEGER(IntKi)                          :: n_t_module          ! simulation time step, loop counter for individual modules
    INTEGER(IntKi)                          :: ErrStat2
@@ -5934,7 +5975,7 @@ SUBROUTINE FAST_AdvanceStates( t_initial, n_t_global, p_FAST, m_FAST, ED, BD, Sr
       DO j_ss = 1, p_FAST%n_substeps( Module_MAP )
          n_t_module = n_t_global*p_FAST%n_substeps( Module_MAP ) + j_ss - 1
          t_module   = n_t_module*p_FAST%dt_module( Module_MAP ) + t_initial
-               
+         
          CALL MAP_UpdateStates( t_module, n_t_module, MAPp%Input, MAPp%InputTimes, MAPp%p, MAPp%x(STATE_PRED), MAPp%xd(STATE_PRED), MAPp%z(STATE_PRED), MAPp%OtherSt, ErrStat2, ErrMsg2 )
             CALL SetErrStat( Errstat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )
       END DO !j_ss
@@ -5948,7 +5989,32 @@ SUBROUTINE FAST_AdvanceStates( t_initial, n_t_global, p_FAST, m_FAST, ED, BD, Sr
          CALL SetErrStat( Errstat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )         
       CALL MD_CopyOtherState( MD%OtherSt(STATE_CURR), MD%OtherSt(STATE_PRED), MESH_UPDATECOPY, Errstat2, ErrMsg2)
          CALL SetErrStat( Errstat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )
-            
+      !----------------------------------------------------------------------------------------
+      ! Update tug position and anchor cable length
+      !----------------------------------------------------------------------------------------
+         CALL update_ship_control(Ship1_Control_Order, Ship2_Control_Order, Ship3_Control_Order, Ship4_Control_Order)
+         CALL shipsetfun1(Mean_Wave_Height, Ship1_Control_Order%keep_head, Wave_Direction, Current_Direction, Current_Speed, Ship1_Control_Order%keep_pos, &
+                          Ship1_Control_Order%Target_X, Ship1_Control_Order%Target_Y, Ship1_Control_Order%Target_HEAD,&
+                          Ship1_Line_Force)
+         CALL shipsetfun2(Ship2_Control_Order%keep_pos, Ship2_Control_Order%keep_head, Ship2_Control_Order%Target_X, Ship2_Control_Order%Target_Y, Ship2_Control_Order%Target_HEAD, Ship2_Line_Force)
+         CALL shipsetfun3(Ship3_Control_Order%keep_pos, Ship3_Control_Order%keep_head, Ship3_Control_Order%Target_X, Ship3_Control_Order%Target_Y, Ship3_Control_Order%Target_HEAD, Ship3_Line_Force)
+         CALL shipsetfun4(Ship4_Control_Order%keep_pos, Ship4_Control_Order%keep_head, Ship4_Control_Order%Target_X, Ship4_Control_Order%Target_Y, Ship4_Control_Order%Target_HEAD, Ship4_Line_Force)
+         
+         
+         CALL shipsportfun1(p_FAST%Ship1_Surge, p_FAST%Ship1_Sway, p_FAST%Ship1_Heave, p_FAST%Ship1_Roll, p_FAST%Ship1_Pitch, p_FAST%Ship1_Yaw, Ship1_Freedom, Ship1_Velocity)
+         CALL shipsportfun2(p_FAST%Ship2_Surge, p_FAST%Ship2_Sway, p_FAST%Ship2_Heave, p_FAST%Ship2_Roll, p_FAST%Ship2_Pitch, p_FAST%Ship2_Yaw, Ship2_Freedom, Ship2_Velocity)
+         CALL shipsportfun3(p_FAST%Ship3_Surge, p_FAST%Ship3_Sway, p_FAST%Ship3_Heave, p_FAST%Ship3_Roll, p_FAST%Ship3_Pitch, p_FAST%Ship3_Yaw, Ship3_Freedom, Ship3_Velocity)
+         CALL shipsportfun4(p_FAST%Ship4_Surge, p_FAST%Ship4_Sway, p_FAST%Ship4_Heave, p_FAST%Ship4_Roll, p_FAST%Ship4_Pitch, p_FAST%Ship4_Yaw, Ship4_Freedom, Ship4_Velocity)
+         CALL send_tug_data(1, p_FAST%Ship1_Surge, p_FAST%Ship1_Sway, p_FAST%Ship1_Heave, p_FAST%Ship1_Roll, p_FAST%Ship1_Pitch, p_FAST%Ship1_Yaw);
+         CALL send_tug_data(2, p_FAST%Ship2_Surge, p_FAST%Ship2_Sway, p_FAST%Ship2_Heave, p_FAST%Ship2_Roll, p_FAST%Ship2_Pitch, p_FAST%Ship2_Yaw);
+         CALL send_tug_data(3, p_FAST%Ship3_Surge, p_FAST%Ship3_Sway, p_FAST%Ship3_Heave, p_FAST%Ship3_Roll, p_FAST%Ship3_Pitch, p_FAST%Ship3_Yaw);
+         CALL send_tug_data(4, p_FAST%Ship4_Surge, p_FAST%Ship4_Sway, p_FAST%Ship4_Heave, p_FAST%Ship4_Roll, p_FAST%Ship4_Pitch, p_FAST%Ship4_Yaw);
+         
+         CALL Set_Vessel_Freedom(MD%u, MD%m, Ship1_Freedom, Ship1_Velocity, 5)
+         CALL Set_Vessel_Freedom( MD%u,MD%m, Ship2_Freedom, Ship2_Velocity, 6)
+         CALL Set_Vessel_Freedom( MD%u, MD%m,Ship3_Freedom, Ship3_Velocity, 7)
+         CALL Set_Vessel_Freedom( MD%u, MD%m,Ship4_Freedom, Ship4_Velocity, 8)
+
       DO j_ss = 1, p_FAST%n_substeps( Module_MD )
          n_t_module = n_t_global*p_FAST%n_substeps( Module_MD ) + j_ss - 1
          t_module   = n_t_module*p_FAST%dt_module( Module_MD ) + t_initial
@@ -5957,7 +6023,14 @@ SUBROUTINE FAST_AdvanceStates( t_initial, n_t_global, p_FAST, m_FAST, ED, BD, Sr
                                MD%z(STATE_PRED), MD%OtherSt(STATE_PRED), MD%m, ErrStat2, ErrMsg2 )
             CALL SetErrStat( Errstat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )
       END DO !j_ss
-               
+
+      CALL FLines_OUT(MD%m, MD%p, MD%y, Ship1_Line_Force, Ship2_Line_Force, Ship3_Line_Force, Ship4_Line_Force)
+
+      Mean_Wave_Height            = 0
+      Wave_Direction              = 0
+      Current_Direction           = 0
+      Current_Speed               = 0
+      
    ELSEIF (p_FAST%CompMooring == Module_FEAM) THEN
       CALL FEAM_CopyContState   (FEAM%x( STATE_CURR), FEAM%x( STATE_PRED), MESH_UPDATECOPY, Errstat2, ErrMsg2)
          CALL SetErrStat( Errstat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )

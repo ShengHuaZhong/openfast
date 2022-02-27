@@ -332,7 +332,7 @@ SUBROUTINE BladedInterface_Init(u, p, m, xd, y, InputFileData, InitInp, ErrStat,
 
    m%dll_data%DLL_DT   = InputFileData%DLL_DT ! Communication interval (sec)
    p%DLL_n             = NINT( m%dll_data%DLL_DT / p%DT )
-   IF ( .NOT. EqualRealNos( p%DLL_n * p%DT, m%dll_data%DLL_DT ) ) THEN
+   IF ( .NOT. EqualRealNos16( REAL(p%DLL_n, 16) * p%DT, m%dll_data%DLL_DT ) ) THEN
       CALL CheckError( ErrID_Fatal, 'DLL_DT must be an integer multiple of DT.' )
    END IF
    IF ( m%dll_data%DLL_DT < EPSILON( m%dll_data%DLL_DT ) ) THEN

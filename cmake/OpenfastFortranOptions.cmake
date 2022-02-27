@@ -99,8 +99,8 @@ endmacro(check_f2008_features)
 #
 macro(set_fast_gfortran)
   if(NOT WIN32)
-    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -fpic ")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpic")
+    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -fpic -g")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpic -g")
   endif(NOT WIN32)
 
   # Fix free-form compilation for OpenFAST
@@ -110,7 +110,7 @@ macro(set_fast_gfortran)
   # Disable stack reuse within routines: issues seen with gfortran 9.x, but others may also exhibit
   #   see section 3.16 of https://gcc.gnu.org/onlinedocs/gcc-9.2.0/gcc.pdf
   #   and https://github.com/OpenFAST/openfast/pull/595
-  set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -fstack-reuse=none")
+  set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -fstack-reuse=none -fno-omit-frame-pointer")
 
   # Deal with Double/Single precision
   if (DOUBLE_PRECISION)
@@ -167,7 +167,7 @@ macro(set_fast_intel_fortran_posix)
 
   # debug flags
   if(CMAKE_BUILD_TYPE MATCHES Debug)
-    set( CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} -check all,no-array-temps -traceback" )
+    set( CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG} -check noarg_temp_created -traceback" )
   endif()
 
   # OPENMP

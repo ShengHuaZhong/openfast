@@ -1436,7 +1436,7 @@ END SUBROUTINE ED_ReadInput
 !----------------------------------------------------------------------------------------------------------------------------------
 !> This subroutine validates the input file data
 SUBROUTINE ED_ValidateInput( InputFileData, BD4Blades, Linearize, ErrStat, ErrMsg )
-!..................................................................................................................................
+!............................................ ......................................................................................
 
    TYPE(ED_InputFile),       INTENT(IN)       :: InputFileData       !< Data stored in the module's input file
    LOGICAL,                  INTENT(IN)       :: BD4Blades           !< Determines if we should validate the blade values (true=don't validate; use BeamDyn for blades instead)

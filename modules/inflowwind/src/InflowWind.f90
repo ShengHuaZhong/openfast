@@ -793,7 +793,7 @@ CONTAINS
                InitOutData%WindFileInfo%ZRange           =  (/ 0.0_Reki,  FFp%RefHt + FFp%FFZHWid /)
             ELSE
                InitOutData%WindFileInfo%ZRange           =  (/ FFp%GridBase,    &
-                                                               FFp%GridBase + FFp%FFZHWid*2.0 /)
+                                                               FFp%GridBase + FFp%FFZHWid*2.0_ReKi /)
             ENDIF
             InitOutData%WindFileInfo%ZRange_Limited      =  .TRUE.
             InitOutData%WindFileInfo%BinaryFormat        =  FFp%WindFileFormat

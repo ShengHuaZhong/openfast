@@ -136,7 +136,7 @@ IMPLICIT NONE
 ! =======================
 ! =========  FAST_ParameterType  =======
   TYPE, PUBLIC :: FAST_ParameterType
-    REAL(DbKi)  :: DT      !< Integration time step [global time] [s]
+    REAL(16)  :: DT      !< Integration time step [global time] [s]
     REAL(DbKi) , DIMENSION(NumModules)  :: DT_module      !< Integration time step [global time] [s]
     INTEGER(IntKi) , DIMENSION(NumModules)  :: n_substeps      !< The number of module substeps for advancing states from t_global to t_global_next [-]
     INTEGER(IntKi)  :: n_TMax_m1      !< The time step of TMax - dt (the end time of the simulation) [(-)]
@@ -146,6 +146,30 @@ IMPLICIT NONE
     INTEGER(IntKi)  :: KMax      !< Maximum number of input-output-solve iterations (KMax >= 1) [-]
     INTEGER(IntKi)  :: numIceLegs      !< number of suport-structure legs in contact with ice (IceDyn coupling) [-]
     INTEGER(IntKi)  :: nBeams      !< number of BeamDyn instances [-]
+    REAL(ReKi)      :: Ship1_Surge !< initial surge for tug [rad]
+    REAL(ReKi)      :: Ship1_Sway  !< initial Sway for tug [rad]
+    REAL(ReKi)      :: Ship1_Heave !< initial Heave for tug [rad]
+    REAL(ReKi)      :: Ship1_Roll  !< initial roll for tug [rad]
+    REAL(ReKi)      :: Ship1_Pitch !< initial pitch for tug [rad]
+    REAL(ReKi)      :: Ship1_Yaw   !< initial yaw for tug [rad]
+    REAL(ReKi)      :: Ship2_Surge !< initial surge for tug [rad]
+    REAL(ReKi)      :: Ship2_Sway  !< initial Sway for tug [rad]
+    REAL(ReKi)      :: Ship2_Heave !< initial Heave for tug [rad]
+    REAL(ReKi)      :: Ship2_Roll  !< initial roll for tug [rad]
+    REAL(ReKi)      :: Ship2_Pitch !< initial pitch for tug [rad]
+    REAL(ReKi)      :: Ship2_Yaw   !< initial yaw for tug [rad]
+    REAL(ReKi)      :: Ship3_Surge !< initial surge for tug [rad]
+    REAL(ReKi)      :: Ship3_Sway  !< initial Sway for tug [rad]
+    REAL(ReKi)      :: Ship3_Heave !< initial Heave for tug [rad]
+    REAL(ReKi)      :: Ship3_Roll  !< initial roll for tug [rad]
+    REAL(ReKi)      :: Ship3_Pitch !< initial pitch for tug [rad]
+    REAL(ReKi)      :: Ship3_Yaw   !< initial yaw for tug [rad]
+    REAL(ReKi)      :: Ship4_Surge !< initial surge for tug [rad]
+    REAL(ReKi)      :: Ship4_Sway  !< initial Sway for tug [rad]
+    REAL(ReKi)      :: Ship4_Heave !< initial Heave for tug [rad]
+    REAL(ReKi)      :: Ship4_Roll  !< initial roll for tug [rad]
+    REAL(ReKi)      :: Ship4_Pitch !< initial pitch for tug [rad]
+    REAL(ReKi)      :: Ship4_Yaw   !< initial yaw for tug [rad]
     LOGICAL  :: BD_OutputSibling      !< flag to determine if BD input is sibling of output mesh [-]
     LOGICAL , DIMENSION(NumModules)  :: ModuleInitialized      !< An array determining if the module has been initialized [-]
     REAL(DbKi)  :: DT_Ujac      !< Time between when we need to re-calculate these Jacobians [s]
@@ -792,6 +816,14 @@ IMPLICIT NONE
     TYPE(IceDyn_Data)  :: IceD      !< Data for the IceDyn module [-]
     TYPE(ExtPtfm_Data)  :: ExtPtfm      !< Data for the ExtPtfm (external platform loading) module [-]
   END TYPE FAST_TurbineType
+
+  TYPE, PUBLIC :: Ship_PID_Type
+  INTEGER(IntKi) :: keep_pos
+  INTEGER(IntKi) :: keep_head
+      REAL(ReKi) :: Target_X
+      REAL(ReKi) :: Target_Y
+      REAL(ReKi) :: Target_HEAD
+  END TYPE Ship_PID_Type
 ! =======================
 CONTAINS
  SUBROUTINE FAST_CopyVTK_BLSurfaceType( SrcVTK_BLSurfaceTypeData, DstVTK_BLSurfaceTypeData, CtrlCode, ErrStat, ErrMsg )

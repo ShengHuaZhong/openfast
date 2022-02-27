@@ -1859,10 +1859,10 @@ SUBROUTINE ED_CalcContStateDeriv( t, u, p, x, xd, z, OtherState, m, dxdt, ErrSta
          call setErrStat(ErrStat2,ErrMsg2,ErrStat,ErrMsg,RoutineName)
          IF (ErrStat >= AbortErrLev) RETURN
    
-      CALL CalculatePositions(        p, x, m%CoordSys,    m%RtHS ) ! calculate positions
+      CALL CalculatePositionsNoFan(        p, x, m%CoordSys,    m%RtHS ) ! calculate positions
       CALL CalculateAngularPosVelPAcc(p, x, m%CoordSys,    m%RtHS ) ! calculate angular positions, velocities, and partial accelerations, including partial angular quantities
-      CALL CalculateLinearVelPAcc(    p, x, m%CoordSys,    m%RtHS ) ! calculate linear velocities and partial accelerations
-      CALL CalculateForcesMoments(    p, x, m%CoordSys, u, m%RtHS ) ! calculate the forces and moments (requires AeroBladeForces and AeroBladeMoments)            
+      CALL CalculateLinearVelPAccNoFan(    p, x, m%CoordSys,    m%RtHS ) ! calculate linear velocities and partial accelerations
+      CALL CalculateForcesMoments2(    p, x, m%CoordSys, u, m%RtHS ) ! calculate the forces and moments (requires AeroBladeForces and AeroBladeMoments)            
       
    END IF
       
@@ -1873,9 +1873,9 @@ SUBROUTINE ED_CalcContStateDeriv( t, u, p, x, xd, z, OtherState, m, dxdt, ErrSta
    
       ! Compute the moments from teeter springs and dampers, rotor-furl springs and dampers, tail-furl springs and dampers
 
-   CALL Teeter  ( t, p, m%RtHS%TeetAng, m%RtHS%TeetAngVel, m%RtHS%TeetMom ) ! Compute moment from teeter     springs and dampers, TeetMom; NOTE: TeetMom will be zero for a 3-blader since TeetAng = TeetAngVel = 0
-   CALL RFurling( t, p, x%QT(DOF_RFrl),          x%QDT(DOF_RFrl),            m%RtHS%RFrlMom ) ! Compute moment from rotor-furl springs and dampers, RFrlMom
-   CALL TFurling( t, p, x%QT(DOF_TFrl),          x%QDT(DOF_TFrl),            m%RtHS%TFrlMom ) ! Compute moment from tail-furl  springs and dampers, TFrlMom
+   !CALL Teeter  ( t, p, m%RtHS%TeetAng, m%RtHS%TeetAngVel, m%RtHS%TeetMom ) ! Compute moment from teeter     springs and dampers, TeetMom; NOTE: TeetMom will be zero for a 3-blader since TeetAng = TeetAngVel = 0
+   !CALL RFurling( t, p, x%QT(DOF_RFrl),          x%QDT(DOF_RFrl),            m%RtHS%RFrlMom ) ! Compute moment from rotor-furl springs and dampers, RFrlMom
+   !CALL TFurling( t, p, x%QT(DOF_TFrl),          x%QDT(DOF_TFrl),            m%RtHS%TFrlMom ) ! Compute moment from tail-furl  springs and dampers, TFrlMom
    
    !bjj: note m%RtHS%GBoxEffFac needed in OtherState only to fix HSSBrTrq (and used in FillAugMat)
    m%RtHS%GBoxEffFac  = p%GBoxEff**OtherState%SgnPrvLSTQ      ! = GBoxEff if SgnPrvLSTQ = 1 OR 1/GBoxEff if SgnPrvLSTQ = -1
@@ -6074,7 +6074,7 @@ SUBROUTINE SetCoordSy( t, CoordSys, RtHSdat, BlPitch, p, x, ErrStat, ErrMsg )
 
 
       ! Tower base / platform coordinate system:
-
+   !PRINT *, x%QT(DOF_R), x%QT(DOF_Y), -x%QT(DOF_P)
    CALL SmllRotTrans( 'platform displacement (ElastoDyn SetCoordSy)', x%QT(DOF_R), x%QT(DOF_Y), -x%QT(DOF_P), TransMat, TRIM(Num2LStr(t))//' s', ErrStat2, ErrMsg2 )  ! Get the transformation matrix, TransMat, from inertial frame to tower base / platform coordinate systems.
       CALL CheckError( ErrStat2, ErrMsg2 )
       IF (ErrStat >= AbortErrLev) RETURN
@@ -6793,6 +6793,119 @@ SUBROUTINE CalculatePositions( p, x, CoordSys, RtHSdat )
 
 END SUBROUTINE CalculatePositions
 !----------------------------------------------------------------------------------------------------------------------------------
+!> 删除塔基和风机的位置计算代码， 都置0
+!! 
+SUBROUTINE CalculatePositionsNoFan( p, x, CoordSys, RtHSdat )
+   !..................................................................................................................................
+   
+         ! Passed variables
+      TYPE(ED_ParameterType),       INTENT(IN   )  :: p           !< Parameters
+      TYPE(ED_ContinuousStateType), INTENT(IN   )  :: x           !< Continuous states at Time
+      TYPE(ED_CoordSys),            INTENT(IN   )  :: CoordSys    !< The coordinate systems that have been set for these states/time
+      TYPE(ED_RtHndSide),           INTENT(INOUT)  :: RtHSdat     !< data from the RtHndSid module (contains positions to be set)
+   
+         !Local variables
+      REAL(R8Ki)                   :: rK        (3)                                   ! Position vector from inertial frame origin to tail fin center of pressure (point K).
+      !REAL(R8Ki)                   :: rQ        (3)                                   ! Position vector from inertial frame origin to apex of rotation (point Q).
+   
+      INTEGER(IntKi)               :: J                                               ! Counter for elements
+      INTEGER(IntKi)               :: K                                               ! Counter for blades
+   
+         !-------------------------------------------------------------------------------------------------
+         ! Positions
+         !-------------------------------------------------------------------------------------------------
+   
+         ! Define the position vectors between the various points on the wind turbine
+         !   that are not dependent on the distributed tower or blade parameters:
+   
+      RtHSdat%rZ    = x%QT(DOF_Sg)* CoordSys%z1 + x%QT(DOF_Hv)* CoordSys%z2 - x%QT(DOF_Sw)* CoordSys%z3                          ! Position vector from inertia frame origin to platform reference (point Z).
+      RtHSdat%rZY   = p%rZYzt*  CoordSys%a2 + p%PtfmCMxt*CoordSys%a1 - p%PtfmCMyt*CoordSys%a3                                    ! Position vector from platform reference (point Z) to platform mass center (point Y).      
+      RtHSdat%rZT0  = p%rZT0zt* CoordSys%a2                                                                                      ! Position vector from platform reference (point Z) to tower base (point T(0))
+      RtHSdat%rZO   = ( x%QT(DOF_TFA1) + x%QT(DOF_TFA2)                                                        )*CoordSys%a1 &   ! Position vector from platform reference (point Z) to tower-top / base plate (point O).
+                       + ( p%RefTwrHt - 0.5*(      p%AxRedTFA(1,1,p%TTopNode)*x%QT(DOF_TFA1)*x%QT(DOF_TFA1) &
+                                             +     p%AxRedTFA(2,2,p%TTopNode)*x%QT(DOF_TFA2)*x%QT(DOF_TFA2) &
+                                             + 2.0*p%AxRedTFA(1,2,p%TTopNode)*x%QT(DOF_TFA1)*x%QT(DOF_TFA2) &
+                                             +     p%AxRedTSS(1,1,p%TTopNode)*x%QT(DOF_TSS1)*x%QT(DOF_TSS1) &
+                                             +     p%AxRedTSS(2,2,p%TTopNode)*x%QT(DOF_TSS2)*x%QT(DOF_TSS2) &
+                                             + 2.0*p%AxRedTSS(1,2,p%TTopNode)*x%QT(DOF_TSS1)*x%QT(DOF_TSS2)   ) )*CoordSys%a2 &
+                       + ( x%QT(DOF_TSS1) + x%QT(DOF_TSS2)                                                      )*CoordSys%a3
+      RtHSdat%rOU   =   p%NacCMxn*CoordSys%d1  +  p%NacCMzn  *CoordSys%d2  -  p%NacCMyn  *CoordSys%d3                            ! Position vector from tower-top / base plate (point O) to nacelle center of mass (point U).
+      RtHSdat%rOV   = p%RFrlPntxn*CoordSys%d1  +  p%RFrlPntzn*CoordSys%d2  -  p%RFrlPntyn*CoordSys%d3                            ! Position vector from tower-top / base plate (point O) to specified point on rotor-furl axis (point V).
+      RtHSdat%rVIMU =   p%rVIMUxn*CoordSys%rf1 +  p%rVIMUzn  *CoordSys%rf2 -   p%rVIMUyn *CoordSys%rf3                           ! Position vector from specified point on rotor-furl axis (point V) to nacelle IMU (point IMU).
+      RtHSdat%rVD   =     p%rVDxn*CoordSys%rf1 +    p%rVDzn  *CoordSys%rf2 -     p%rVDyn *CoordSys%rf3                           ! Position vector from specified point on rotor-furl axis (point V) to center of mass of structure that furls with the rotor (not including rotor) (point D).
+      RtHSdat%rVP   =     p%rVPxn*CoordSys%rf1 +    p%rVPzn  *CoordSys%rf2 -     p%rVPyn *CoordSys%rf3 + p%OverHang*CoordSys%c1  ! Position vector from specified point on rotor-furl axis (point V) to teeter pin (point P).
+      RtHSdat%rPQ   = -p%UndSling*CoordSys%g1                                                                                    ! Position vector from teeter pin (point P) to apex of rotation (point Q).
+      RtHSdat%rQC   =     p%HubCM*CoordSys%g1                                                                                    ! Position vector from apex of rotation (point Q) to hub center of mass (point C).
+      RtHSdat%rOW   = p%TFrlPntxn*CoordSys%d1  + p%TFrlPntzn *CoordSys%d2 -  p%TFrlPntyn*CoordSys%d3                             ! Position vector from tower-top / base plate (point O) to specified point on  tail-furl axis (point W).
+      RtHSdat%rWI   =     p%rWIxn*CoordSys%tf1 +      p%rWIzn*CoordSys%tf2 -     p%rWIyn*CoordSys%tf3                            ! Position vector from specified point on  tail-furl axis (point W) to tail boom center of mass     (point I).
+      RtHSdat%rWJ   =     p%rWJxn*CoordSys%tf1 +      p%rWJzn*CoordSys%tf2 -     p%rWJyn*CoordSys%tf3                            ! Position vector from specified point on  tail-furl axis (point W) to tail fin  center of mass     (point J).
+      RtHSdat%rWK   =     p%rWKxn*CoordSys%tf1 +      p%rWKzn*CoordSys%tf2 -     p%rWKyn*CoordSys%tf3                            ! Position vector from specified point on  tail-furl axis (point W) to tail fin  center of pressure (point K).
+      RtHSdat%rPC   = RtHSdat%rPQ + RtHSdat%rQC                                                                                  ! Position vector from teeter pin (point P) to hub center of mass (point C).
+      RtHSdat%rT0O  = RtHSdat%rZO - RtHSdat%rZT0                                                                                 ! Position vector from the tower base (point T(0)) to tower-top / base plate (point O).
+      RtHSdat%rO    = RtHSdat%rZ  + RtHSdat%rZO                                                                                  ! Position vector from inertial frame origin to tower-top / base plate (point O).
+      RtHSdat%rV    = RtHSdat%rO  + RtHSdat%rOV                                                                                  ! Position vector from inertial frame origin to specified point on rotor-furl axis (point V)
+      !RtHSdat%rP    = RtHSdat%rO  + RtHSdat%rOV + RtHSdat%rVP                                                                   ! Position vector from inertial frame origin to teeter pin (point P).
+      RtHSdat%rP    = RtHSdat%rV  + RtHSdat%rVP                                                                                  ! Position vector from inertial frame origin to teeter pin (point P).
+      RtHSdat%rQ    = RtHSdat%rP  + RtHSdat%rPQ                                                                                  ! Position vector from inertial frame origin to apex of rotation (point Q).
+              rK    = RtHSdat%rO  + RtHSdat%rOW + RtHSdat%rWK                                                                    ! Position vector from inertial frame origin to tail fin center of pressure (point K).
+   
+   
+      DO K = 1,p%NumBl ! Loop through all blades
+   
+         ! Calculate the position vector of the tip:
+         RtHSdat%rS0S(:,K,p%TipNode) = 0.0
+         RtHSdat%rQS (:,K,p%TipNode) = 0.0                                   ! Position vector from apex of rotation (point Q) to the blade tip (point S(p%BldFlexL)).
+         RtHSdat%rS  (:,K,p%TipNode) = 0.0                                   ! Position vector from inertial frame origin      to the blade tip (point S(p%BldFlexL)).
+         
+         ! position vectors for blade root node:
+         RtHSdat%rQS (:,K,0) = 0.0    
+         RtHSdat%rS  (:,K,0) = 0.0
+         
+         
+            ! Calculate the position vector from the teeter pin to the blade root:
+      
+         RtHSdat%rPS0(:,K) = 0.0   ! Position vector from teeter pin (point P) to blade root (point S(0)).
+   
+         
+         DO J = 1,p%BldNodes ! Loop through the blade nodes / elements
+   
+   
+         ! Calculate the position vector of the current node:
+   
+            RtHSdat%rS0S(:,K,J) = 0.0
+            RtHSdat%rQS (:,K,J) = 0.0                                                ! Position vector from apex of rotation (point Q) to the current node (point S(RNodes(J)).
+            RtHSdat%rS  (:,K,J) = 0.0                                                               ! Position vector from inertial frame origin      to the current node (point S(RNodes(J)).
+   
+   
+         END DO !J = 1,p%BldNodes ! Loop through the blade nodes / elements
+   
+   
+   
+      END DO !K = 1,p%NumBl
+    
+   
+      
+   
+      !----------------------------------------------------------------------------------------------------
+      ! Get the tower element positions
+      !----------------------------------------------------------------------------------------------------
+      RtHSdat%rZT (:,0) = RtHSdat%rZT0
+      DO J = 1,p%TwrNodes  ! Loop through the tower nodes / elements
+   
+   
+         ! Calculate the position vector of the current node:
+   
+         RtHSdat%rT0T(:,J) = 0.0
+         RtHSdat%rZT (:,J) = 0.0                                                                    ! Position vector from platform reference (point Z) to the current node (point T(HNodes(J)).
+   
+   
+         RtHSdat%rT(:,J)   = 0.0                                                                    ! Position vector from inertial frame origin        to the current node (point T(HNodes(J)).
+   
+      END DO
+   
+   
+   END SUBROUTINE CalculatePositionsNoFan
+!----------------------------------------------------------------------------------------------------------------------------------
 !> This routine is used to calculate the angular positions, velocities, and partial accelerations stored in other states that are used in
 !! both the CalcOutput and CalcContStateDeriv routines.
 SUBROUTINE CalculateAngularPosVelPAcc( p, x, CoordSys, RtHSdat )
@@ -7497,639 +7610,1364 @@ SUBROUTINE CalculateLinearVelPAcc( p, x, CoordSys, RtHSdat )
 
 END SUBROUTINE CalculateLinearVelPAcc
 !----------------------------------------------------------------------------------------------------------------------------------
+!> 删除浮式风机上部模块的速度计算代码
+SUBROUTINE CalculateLinearVelPAccNoFan( p, x, CoordSys, RtHSdat )
+   !..................................................................................................................................
+   
+         ! Passed variables
+      TYPE(ED_ParameterType),       INTENT(IN   )  :: p           !< Parameters
+      TYPE(ED_ContinuousStateType), INTENT(IN   )  :: x           !< Continuous states at Time
+      TYPE(ED_CoordSys),            INTENT(IN   )  :: CoordSys    !< The coordinate systems that have been set for these states/time
+      TYPE(ED_RtHndSide),           INTENT(INOUT)  :: RtHSdat     !< data from the RtHndSid module (contains positions to be set)
+   
+         ! Local variables
+      REAL(ReKi)                   :: LinAccEKt (3)                                   ! "Portion of the linear acceleration of the tail fin  center of pressure (point K) in the inertia frame (body E for earth) associated with everything but the QD2T()'s"
+      REAL(ReKi)                   :: LinAccEPt (3)                                   ! "Portion of the linear acceleration of the teeter pin (point P) in the inertia frame (body E for earth) associated with everything but the QD2T()'s"
+      REAL(ReKi)                   :: LinAccEQt (3)                                   ! "Portion of the linear acceleration of the apex of rotation (point Q) in the inertia frame (body E for earth) associated with everything but the QD2T()'s"
+      REAL(ReKi)                   :: LinAccEVt (3)                                   ! "Portion of the linear acceleration of the selected point on the rotor-furl axis (point V) in the inertia frame (body E for earth) associated with everything but the QD2T()'s"
+      REAL(ReKi)                   :: LinAccEWt (3)                                   ! "Portion of the linear acceleration of the selected point on the  tail-furl axis (point W) in the inertia frame (body E for earth) associated with everything but the QD2T()'s"
+      REAL(ReKi)                   :: LinVelEK  (3)                                   ! "Linear velocity of tail fin center-of-pressure (point K) in the inertia frame"
+      REAL(ReKi)                   :: LinVelHS  (3)                                   ! "Relative linear velocity of the current point on the current blade (point S) in the hub frame (body H)"
+      REAL(ReKi)                   :: LinVelXO  (3)                                   ! "Relative linear velocity of the tower-top / base plate (point O) in the platform (body X)"
+      REAL(ReKi)                   :: LinVelXT  (3)                                   ! "Relative linear velocity of the current point on the tower (point T) in the platform (body X)"
+   
+      REAL(ReKi)                   :: EwAXrWI   (3)                                   ! = AngVelEA X rWI
+      REAL(ReKi)                   :: EwAXrWJ   (3)                                   ! = AngVelEA X rWJ
+      REAL(ReKi)                   :: EwAXrWK   (3)                                   ! = AngVelEA X rWK
+      REAL(ReKi)                   :: EwHXrPQ   (3)                                   ! = AngVelEH X rPQ
+      REAL(ReKi)                   :: EwHXrQC   (3)                                   ! = AngVelEH X rQC
+      REAL(ReKi)                   :: EwHXrQS   (3)                                   ! = AngVelEH X rQS of the current blade point S.
+      REAL(ReKi)                   :: EwNXrOU   (3)                                   ! = AngVelEN X rOU
+      REAL(ReKi)                   :: EwNXrOV   (3)                                   ! = AngVelEN X rOV
+      REAL(ReKi)                   :: EwNXrOW   (3)                                   ! = AngVelEN X rOW
+      REAL(ReKi)                   :: EwRXrVD   (3)                                   ! = AngVelER X rVD
+      REAL(ReKi)                   :: EwRXrVIMU (3)                                   ! = AngVelER X rVIMU
+      REAL(ReKi)                   :: EwRXrVP   (3)                                   ! = AngVelER X rVP
+      REAL(ReKi)                   :: EwXXrZO   (3)                                   ! = AngVelEX X rZO
+      REAL(ReKi)                   :: EwXXrZT   (3)                                   ! = AngVelEX X rZT
+      REAL(ReKi)                   :: EwXXrZY   (3)                                   ! = AngVelEX X rZY
+   
+      REAL(ReKi)                   :: TmpVec0   (3)                                   ! A temporary vector used in various computations.
+      REAL(ReKi)                   :: TmpVec1   (3)                                   ! A temporary vector used in various computations.
+      REAL(ReKi)                   :: TmpVec2   (3)                                   ! A temporary vector used in various computations.
+      REAL(ReKi)                   :: TmpVec3   (3)                                   ! A temporary vector used in various computations.
+      REAL(ReKi)                   :: TmpVec4   (3)                                   ! A temporary vector used in various computations.
+   
+      INTEGER(IntKi)               :: I                                               ! Loops through some or all of the DOFs
+      INTEGER(IntKi)               :: J                                               ! Counter for elements
+      INTEGER(IntKi)               :: K                                               ! Counter for blades
+   
+   
+         ! Initializations:
+   
+      RtHSdat%LinAccECt   = 0.0
+      RtHSdat%LinAccEDt   = 0.0
+      RtHSdat%LinAccEIMUt = 0.0
+      RtHSdat%LinAccEIt   = 0.0
+      RtHSdat%LinAccEJt   = 0.0
+              LinAccEKt   = 0.0
+      RtHSdat%LinAccEOt   = 0.0
+              LinAccEPt   = 0.0
+              LinAccEQt   = 0.0
+      RtHSdat%LinAccESt   = 0.0
+      RtHSdat%LinAccETt   = 0.0
+      RtHSdat%LinAccEUt   = 0.0
+              LinAccEVt   = 0.0
+              LinAccEWt   = 0.0
+      RtHSdat%LinAccEYt   = 0.0
+      RtHSdat%LinAccEZt   = 0.0
+   
+   
+      !-------------------------------------------------------------------------------------------------
+      ! Partial linear velocities and accelerations
+      !-------------------------------------------------------------------------------------------------
+   
+         ! Define the partial linear velocities (and their 1st derivatives) of all of
+         !   the points on the wind turbine in the inertia frame that are not
+         !   dependent on the distributed tower or blade parameters.  Also, define
+         !   the portion of the linear acceleration of the points in the inertia
+         !   frame associated with everything but the QD2T()'s:
+         ! NOTE: PLinVelEX(I,D,:) = the Dth-derivative of the partial linear velocity
+         !   of DOF I for point X in body E.
+   
+      EwXXrZY   = CROSS_PRODUCT( RtHSdat%AngVelEX, RtHSdat%rZY   ) !
+      EwXXrZO   = 0.0                                              ! CROSS_PRODUCT( RtHSdat%AngVelEX, RtHSdat%rZO   ) 
+      EwNXrOU   = 0.0                                              ! CROSS_PRODUCT( RtHSdat%AngVelEN, RtHSdat%rOU   ) 
+      EwNXrOV   = 0.0                                              ! CROSS_PRODUCT( RtHSdat%AngVelEN, RtHSdat%rOV   ) !
+      EwRXrVD   = 0.0                                              ! CROSS_PRODUCT( RtHSdat%AngVelER, RtHSdat%rVD   )  Cross products
+      EwRXrVIMU = CROSS_PRODUCT( RtHSdat%AngVelER, RtHSdat%rVIMU ) ! that are used
+      EwRXrVP   = 0.0                                              ! CROSS_PRODUCT( RtHSdat%AngVelER, RtHSdat%rVP   )  in the following
+      EwHXrPQ   = 0.0                                              ! CROSS_PRODUCT( RtHSdat%AngVelEH, RtHSdat%rPQ   )  DO...LOOPs
+      EwHXrQC   = 0.0                                              ! CROSS_PRODUCT( RtHSdat%AngVelEH, RtHSdat%rQC   ) 
+      EwNXrOW   = 0.0                                              ! CROSS_PRODUCT( RtHSdat%AngVelEN, RtHSdat%rOW   ) 
+      EwAXrWI   = 0.0                                              ! CROSS_PRODUCT( RtHSdat%AngVelEA, RtHSdat%rWI   ) 
+      EwAXrWJ   = 0.0                                              ! CROSS_PRODUCT( RtHSdat%AngVelEA, RtHSdat%rWJ   ) 
+      EwAXrWK   = 0.0                                              ! CROSS_PRODUCT( RtHSdat%AngVelEA, RtHSdat%rWK   ) 
+   
+   
+      RtHSdat%PLinVelEZ(       :,:,:) = 0.0
+      RtHSdat%PLinVelEZ(DOF_Sg  ,0,:) =  CoordSys%z1
+      RtHSdat%PLinVelEZ(DOF_Sw  ,0,:) = -CoordSys%z3
+      RtHSdat%PLinVelEZ(DOF_Hv  ,0,:) =  CoordSys%z2
+   
+      RtHSdat%LinVelEZ                =   x%QDT(DOF_Sg  )*RtHSdat%PLinVelEZ(DOF_Sg  ,0,:) &
+                                        + x%QDT(DOF_Sw  )*RtHSdat%PLinVelEZ(DOF_Sw  ,0,:) &
+                                        + x%QDT(DOF_Hv  )*RtHSdat%PLinVelEZ(DOF_Hv  ,0,:)
+   
+   
+      RtHSdat%PLinVelEY(       :,:,:) = RtHSdat%PLinVelEZ(:,:,:)
+      DO I = 1,NPX   ! Loop through all DOFs associated with the angular motion of the platform (body X)
+   
+         TmpVec0 = CROSS_PRODUCT( RtHSdat%PAngVelEX(PX(I)   ,0,:), RtHSdat%rZY  )
+         TmpVec1 = CROSS_PRODUCT( RtHSdat%PAngVelEX(PX(I)   ,0,:),     EwXXrZY  )
+   
+         RtHSdat%PLinVelEY(PX(I),0,:) = TmpVec0   +                       RtHSdat%PLinVelEY(PX(I)   ,0,:)
+         RtHSdat%PLinVelEY(PX(I),1,:) = TmpVec1   +                       RtHSdat%PLinVelEY(PX(I)   ,1,:)
+   
+          RtHSdat%LinAccEYt           = RtHSdat%LinAccEYt + x%QDT(PX(I) )*RtHSdat%PLinVelEY(PX(I)   ,1,:)
+   
+      ENDDO          ! I - all DOFs associated with the angular motion of the platform (body X)
+   
+   
+      RtHSdat%PLinVelEO(       :,:,:) = RtHSdat%PLinVelEZ(:,:,:)
+      RtHSdat%PLinVelEO(DOF_TFA1,0,:) = 0.0
+      RtHSdat%PLinVelEO(DOF_TSS1,0,:) = 0.0
+      RtHSdat%PLinVelEO(DOF_TFA2,0,:) = 0.0
+      RtHSdat%PLinVelEO(DOF_TSS2,0,:) = 0.0
+   
+      TmpVec1 = CROSS_PRODUCT(   RtHSdat%AngVelEX   , RtHSdat%PLinVelEO(DOF_TFA1,0,:) )
+      TmpVec2 = CROSS_PRODUCT(   RtHSdat%AngVelEX   , RtHSdat%PLinVelEO(DOF_TSS1,0,:) )
+      TmpVec3 = CROSS_PRODUCT(   RtHSdat%AngVelEX   , RtHSdat%PLinVelEO(DOF_TFA2,0,:) )
+      TmpVec4 = CROSS_PRODUCT(   RtHSdat%AngVelEX   , RtHSdat%PLinVelEO(DOF_TSS2,0,:) )
+   
+      RtHSdat%PLinVelEO(DOF_TFA1,1,:) = 0.0
+      RtHSdat%PLinVelEO(DOF_TSS1,1,:) = 0.0
+      RtHSdat%PLinVelEO(DOF_TFA2,1,:) = 0.0
+      RtHSdat%PLinVelEO(DOF_TSS2,1,:) = 0.0
+   
+       LinVelXO               = 0.0
+       RtHSdat%LinAccEOt              =      0.0
+       
+      RtHSdat%LinVelEO = LinVelXO + RtHSdat%LinVelEZ
+      DO I = 1,NPX   ! Loop through all DOFs associated with the angular motion of the platform (body X)
+   
+         TmpVec0 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEX(PX(I)   ,0,:), RtHSdat%rZO                 )
+         TmpVec1 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEX(PX(I)   ,0,:),     EwXXrZO + LinVelXO      )
+   
+         RtHSdat%PLinVelEO(PX(I),0,:) = TmpVec0    +                       RtHSdat%PLinVelEO(PX(I)   ,0,:)
+         RtHSdat%PLinVelEO(PX(I),1,:) = TmpVec1    +                       RtHSdat%PLinVelEO(PX(I)   ,1,:)
+   
+         RtHSdat%LinVelEO             =  RtHSdat%LinVelEO  + x%QDT(PX(I) )*RtHSdat%PLinVelEO(PX(I)   ,0,:)
+         RtHSdat%LinAccEOt            =  RtHSdat%LinAccEOt + x%QDT(PX(I) )*RtHSdat%PLinVelEO(PX(I)   ,1,:)
+   
+      ENDDO          ! I - all DOFs associated with the angular motion of the platform (body X)
+                        
+   
+      RtHSdat%PLinVelEU(       :,:,:) = RtHSdat%PLinVelEO(:,:,:)
+      DO I = 1,NPN   ! Loop through all DOFs associated with the angular motion of the nacelle (body N)
+   
+         TmpVec0 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEN(PN(I)   ,0,:), RtHSdat%rOU                 )
+         TmpVec1 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEN(PN(I)   ,0,:),     EwNXrOU                 )
+         TmpVec2 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEN(PN(I)   ,1,:), RtHSdat%rOU                 )
+         
+         IF  (I .LE. NPX) THEN
+           RtHSdat%PLinVelEU(PN(I),0,:) = TmpVec0    +               RtHSdat%PLinVelEU(PN(I)   ,0,:)
+           RtHSdat%PLinVelEU(PN(I),1,:) = TmpVec1    + TmpVec2 +     RtHSdat%PLinVelEU(PN(I)   ,1,:)
+         ELSE 
+           RtHSdat%PLinVelEU(PN(I),0,:) = 0.0
+           RtHSdat%PLinVelEU(PN(I),1,:) = 0.0
+         END IF
+
+          RtHSdat%LinAccEUt           =  RtHSdat%LinAccEUt + x%QDT(PN(I) )*RtHSdat%PLinVelEU(PN(I)   ,1,:)
+   
+      ENDDO          ! I - all DOFs associated with the angular motion of the nacelle (body N)
+   
+   
+      RtHSdat%PLinVelEV(       :,:,:) = RtHSdat%PLinVelEO(:,:,:)
+      DO I = 1,NPN   ! Loop through all DOFs associated with the angular motion of the nacelle (body N)
+   
+         TmpVec0 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEN(PN(I)   ,0,:), RtHSdat%rOV                 )
+         TmpVec1 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEN(PN(I)   ,0,:),     EwNXrOV                 )
+         TmpVec2 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEN(PN(I)   ,1,:), RtHSdat%rOV                 )
+         IF  (I .LE. NPX) THEN
+           RtHSdat%PLinVelEV(PN(I),0,:) = TmpVec0    +               RtHSdat%PLinVelEV(PN(I)   ,0,:)
+           RtHSdat%PLinVelEV(PN(I),1,:) = TmpVec1    + TmpVec2 +     RtHSdat%PLinVelEV(PN(I)   ,1,:)
+         ELSE
+           RtHSdat%PLinVelEV(PN(I),0,:) = 0.0
+           RtHSdat%PLinVelEV(PN(I),1,:) = 0.0
+         END IF
+
+          LinAccEVt                   =  LinAccEVt + x%QDT(PN(I) )*RtHSdat%PLinVelEV(PN(I)   ,1,:)
+   
+      ENDDO          ! I - all DOFs associated with the angular motion of the nacelle (body N)
+   
+   
+      RtHSdat%PLinVelED(       :,:,:) = RtHSdat%PLinVelEV(:,:,:)
+      DO I = 1,NPR   ! Loop through all DOFs associated with the angular motion of the structure that furls with the rotor (not including rotor) (body R)
+   
+         TmpVec0 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelER(PR(I)   ,0,:), RtHSdat%rVD                 )
+         TmpVec1 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelER(PR(I)   ,0,:),     EwRXrVD                 )
+         TmpVec2 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelER(PR(I)   ,1,:), RtHSdat%rVD                 )
+         IF  (I .LE. NPX) THEN
+           RtHSdat%PLinVelED(PR(I),0,:) = TmpVec0    +                       RtHSdat%PLinVelED(PR(I)   ,0,:)
+           RtHSdat%PLinVelED(PR(I),1,:) = TmpVec1    + TmpVec2 +             RtHSdat%PLinVelED(PR(I)   ,1,:)
+         ELSE
+           RtHSdat%PLinVelED(PR(I),0,:) = 0.0
+           RtHSdat%PLinVelED(PR(I),1,:) = 0.0
+         END IF
+         RtHSdat%LinAccEDt            =  RtHSdat%LinAccEDt + x%QDT(PR(I) )*RtHSdat%PLinVelED(PR(I)   ,1,:)
+   
+      ENDDO          ! I - all DOFs associated with the angular motion of the structure that furls with the rotor (not including rotor) (body R)
+   
+   
+      RtHSdat%PLinVelEIMU(     :,:,:) = RtHSdat%PLinVelEV(:,:,:)
+       RtHSdat%LinVelEIMU             =  RtHSdat%LinVelEZ
+      DO I = 1,NPR   ! Loop through all DOFs associated with the angular motion of the structure that furls with the rotor (not including rotor) (body R)
+   
+         TmpVec0 = 0.0 !CROSS_PRODUCT( RtHSdat%PAngVelER(PR(I)   ,0,:), RtHSdat%rVIMU               )
+         TmpVec1 = 0.0 !CROSS_PRODUCT( RtHSdat%PAngVelER(PR(I)   ,0,:),     EwRXrVIMU               )
+         TmpVec2 = 0.0 !CROSS_PRODUCT( RtHSdat%PAngVelER(PR(I)   ,1,:), RtHSdat%rVIMU               )
+    
+         IF  (I .LE. NPX) THEN
+           RtHSdat%PLinVelEIMU(PR(I),0,:) = TmpVec0    +                         RtHSdat%PLinVelEIMU(PR(I) ,0,:)
+           RtHSdat%PLinVelEIMU(PR(I),1,:) = TmpVec1    + TmpVec2 +               RtHSdat%PLinVelEIMU(PR(I) ,1,:)
+         ELSE
+           RtHSdat%PLinVelEIMU(PR(I),0,:) = 0.0
+           RtHSdat%PLinVelEIMU(PR(I),1,:) = 0.0
+         END IF
+         RtHSdat%LinVelEIMU             =  RtHSdat%LinVelEIMU  + x%QDT(PR(I) )*RtHSdat%PLinVelEIMU(PR(I) ,0,:)
+         RtHSdat%LinAccEIMUt            =  RtHSdat%LinAccEIMUt + x%QDT(PR(I) )*RtHSdat%PLinVelEIMU(PR(I) ,1,:)
+   
+      ENDDO          ! I - all DOFs associated with the angular motion of the structure that furls with the rotor (not including rotor) (body R)
+   
+   
+      RtHSdat%PLinVelEP(       :,:,:) = RtHSdat%PLinVelEV(:,:,:)
+      DO I = 1,NPR   ! Loop through all DOFs associated with the angular motion of the structure that furls with the rotor (not including rotor) (body R)
+   
+         TmpVec0 = 0.0 ! CROSS_PRODUCT(             RtHSdat%PAngVelER(PR(I)   ,0,:),     RtHSdat%rVP                 )
+         TmpVec1 = 0.0 ! CROSS_PRODUCT(             RtHSdat%PAngVelER(PR(I)   ,0,:), EwRXrVP                 )
+         TmpVec2 = 0.0 ! CROSS_PRODUCT(             RtHSdat%PAngVelER(PR(I)   ,1,:),     RtHSdat%rVP                 )
+         IF  (I .LE. NPX) THEN
+           RtHSdat%PLinVelEP(PR(I),0,:) = TmpVec0    +               RtHSdat%PLinVelEP(PR(I)   ,0,:)
+           RtHSdat%PLinVelEP(PR(I),1,:) = TmpVec1    + TmpVec2 +     RtHSdat%PLinVelEP(PR(I)   ,1,:)
+         ELSE
+           RtHSdat%PLinVelEP(PR(I),0,:) = 0.0
+           RtHSdat%PLinVelEP(PR(I),1,:) = 0.0
+         END IF
+          LinAccEPt           =  LinAccEPt + x%QDT(PR(I) )*RtHSdat%PLinVelEP(PR(I)   ,1,:)
+   
+      ENDDO          ! I - all DOFs associated with the angular motion of the structure that furls with the rotor (not including rotor) (body R)
+   
+   
+      RtHSdat%PLinVelEQ(       :,:,:) = RtHSdat%PLinVelEP(:,:,:)
+       RtHSdat%LinVelEQ               =  RtHSdat%LinVelEZ
+      DO I = 1,p%NPH   ! Loop through all DOFs associated with the angular motion of the hub (body H)
+   
+         TmpVec0 = 0.0 !CROSS_PRODUCT( RtHSdat%PAngVelEH(p%PH(I)   ,0,:),   RtHSdat%rPQ  )
+         TmpVec1 = 0.0 !CROSS_PRODUCT( RtHSdat%PAngVelEH(p%PH(I)   ,0,:),       EwHXrPQ  )
+         TmpVec2 = 0.0 !CROSS_PRODUCT( RtHSdat%PAngVelEH(p%PH(I)   ,1,:),   RtHSdat%rPQ  )
+   
+         RtHSdat%PLinVelEQ(p%PH(I),0,:) = TmpVec0    +                 RtHSdat%PLinVelEQ(p%PH(I)   ,0,:)
+         RtHSdat%PLinVelEQ(p%PH(I),1,:) = TmpVec1    + TmpVec2 +       RtHSdat%PLinVelEQ(p%PH(I)   ,1,:)
+   
+         RtHSdat%LinVelEQ               =  RtHSdat%LinVelEQ  + x%QDT(p%PH(I) )*RtHSdat%PLinVelEQ(p%PH(I)   ,0,:)
+         LinAccEQt                      =          LinAccEQt + x%QDT(p%PH(I) )*RtHSdat%PLinVelEQ(p%PH(I)   ,1,:)
+         
+      ENDDO          ! I - all DOFs associated with the angular motion of the hub (body H)
+   
+   
+      RtHSdat%PLinVelEC(       :,:,:) = RtHSdat%PLinVelEQ(:,:,:)
+      DO I = 1,p%NPH   ! Loop through all DOFs associated with the angular motion of the hub (body H)
+   
+         TmpVec0 = 0.0 !CROSS_PRODUCT( RtHSdat%PAngVelEH(p%PH(I)   ,0,:), RtHSdat%rQC )
+         TmpVec1 = 0.0 !CROSS_PRODUCT( RtHSdat%PAngVelEH(p%PH(I)   ,0,:),     EwHXrQC )
+         TmpVec2 = 0.0 !CROSS_PRODUCT( RtHSdat%PAngVelEH(p%PH(I)   ,1,:), RtHSdat%rQC )
+   
+         RtHSdat%PLinVelEC(p%PH(I),0,:) = TmpVec0    +                         RtHSdat%PLinVelEC(p%PH(I)   ,0,:)
+         RtHSdat%PLinVelEC(p%PH(I),1,:) = TmpVec1    + TmpVec2 +               RtHSdat%PLinVelEC(p%PH(I)   ,1,:)
+   
+         RtHSdat%LinAccECt              =  RtHSdat%LinAccECt + x%QDT(p%PH(I) )*RtHSdat%PLinVelEC(p%PH(I)   ,1,:)
+   
+      ENDDO          ! I - all DOFs associated with the angular motion of the hub (body H)
+   
+   
+   
+   
+      DO K = 1,p%NumBl ! Loop through all blades
+   
+         DO J = 0,p%TipNode ! Loop through the blade nodes / elements
+   
+         ! Define the partial linear velocities (and their 1st derivatives) of the
+         !   current node (point S(RNodes(J))) in the inertia frame.  Also define
+         !   the overall linear velocity of the current node in the inertia frame.
+         !   Also, define the portion of the linear acceleration of the current node
+         !   in the inertia frame associated with everything but the QD2T()'s:
+   
+            EwHXrQS =0.0 !CROSS_PRODUCT(  RtHSdat%AngVelEH, RtHSdat%rQS(:,K,J) )
+   
+            RtHSdat%PLinVelES(K,J,          :,:,:) = 0.0 !RtHSdat%PLinVelEQ(:,:,:)
+            RtHSdat%PLinVelES(K,J,DOF_BF(K,1),0,:) = 0.0 ! p%TwistedSF(K,1,1,J,0)                          *CoordSys%j1(K,:) &  !bjj: this line can be optimized
+                                                       ! + p%TwistedSF(K,2,1,J,0)                          *CoordSys%j2(K,:) &
+                                                       ! - (   p%AxRedBld(K,1,1,J)*x%QT ( DOF_BF(K,1) ) &
+                                                     !    + p%AxRedBld(K,1,2,J)*x%QT ( DOF_BF(K,2) ) &
+                                                   !    + p%AxRedBld(K,1,3,J)*x%QT ( DOF_BE(K,1) )   )*CoordSys%j3(K,:)
+            RtHSdat%PLinVelES(K,J,DOF_BE(K,1),0,:) = 0.0 !p%TwistedSF(K,1,3,J,0)                          *CoordSys%j1(K,:) &
+                                                   !+ p%TwistedSF(K,2,3,J,0)                          *CoordSys%j2(K,:) &
+                                                   !- (   p%AxRedBld(K,3,3,J)*x%QT ( DOF_BE(K,1) ) &
+                                                   !    + p%AxRedBld(K,2,3,J)*x%QT ( DOF_BF(K,2) ) &
+                                                   !    + p%AxRedBld(K,1,3,J)*x%QT ( DOF_BF(K,1) )   )*CoordSys%j3(K,:)
+            RtHSdat%PLinVelES(K,J,DOF_BF(K,2),0,:) =0.0 ! p%TwistedSF(K,1,2,J,0)                          *CoordSys%j1(K,:) &
+                                                   ! + p%TwistedSF(K,2,2,J,0)                          *CoordSys%j2(K,:) &
+                                                   ! - (   p%AxRedBld(K,2,2,J)*x%QT ( DOF_BF(K,2) ) &
+                                                   !    + p%AxRedBld(K,1,2,J)*x%QT ( DOF_BF(K,1) ) &
+                                                   !    + p%AxRedBld(K,2,3,J)*x%QT ( DOF_BE(K,1) )   )*CoordSys%j3(K,:)
+   
+            TmpVec1 = 0.0 !CROSS_PRODUCT( RtHSdat%AngVelEH, RtHSdat%PLinVelES(K,J,DOF_BF(K,1),0,:) )
+            TmpVec2 = 0.0 !CROSS_PRODUCT( RtHSdat%AngVelEH, RtHSdat%PLinVelES(K,J,DOF_BE(K,1),0,:) )
+            TmpVec3 = 0.0 !CROSS_PRODUCT( RtHSdat%AngVelEH, RtHSdat%PLinVelES(K,J,DOF_BF(K,2),0,:) )
+   
+            RtHSdat%PLinVelES(K,J,DOF_BF(K,1),1,:) = 0.0 !TmpVec1 &
+                                                   !- (   p%AxRedBld(K,1,1,J)*x%QDT( DOF_BF(K,1) ) &
+                                                   !    + p%AxRedBld(K,1,2,J)*x%QDT( DOF_BF(K,2) ) &
+                                                   !    + p%AxRedBld(K,1,3,J)*x%QDT( DOF_BE(K,1) )   )*CoordSys%j3(K,:)
+            RtHSdat%PLinVelES(K,J,DOF_BE(K,1),1,:) = 0.0 !TmpVec2 &
+                                                   !- (   p%AxRedBld(K,3,3,J)*x%QDT( DOF_BE(K,1) ) &
+                                                   !    + p%AxRedBld(K,2,3,J)*x%QDT( DOF_BF(K,2) ) &
+                                                   !    + p%AxRedBld(K,1,3,J)*x%QDT( DOF_BF(K,1) )   )*CoordSys%j3(K,:)
+            RtHSdat%PLinVelES(K,J,DOF_BF(K,2),1,:) = 0.0 !TmpVec3 &
+                                                   !- (   p%AxRedBld(K,2,2,J)*x%QDT( DOF_BF(K,2) ) &
+                                                   !    + p%AxRedBld(K,1,2,J)*x%QDT( DOF_BF(K,1) ) &
+                                                   !    + p%AxRedBld(K,2,3,J)*x%QDT( DOF_BE(K,1) )   )*CoordSys%j3(K,:)
+   
+            LinVelHS                 = 0.0 !x%QDT( DOF_BF(K,1) )*RtHSdat%PLinVelES(K,J,DOF_BF(K,1),0,:) &
+                                     !+ x%QDT( DOF_BE(K,1) )*RtHSdat%PLinVelES(K,J,DOF_BE(K,1),0,:) &
+                                     !+ x%QDT( DOF_BF(K,2) )*RtHSdat%PLinVelES(K,J,DOF_BF(K,2),0,:)
+            RtHSdat%LinAccESt(:,K,J) = 0.0 !x%QDT( DOF_BF(K,1) )*RtHSdat%PLinVelES(K,J,DOF_BF(K,1),1,:) &
+                                     !+ x%QDT( DOF_BE(K,1) )*RtHSdat%PLinVelES(K,J,DOF_BE(K,1),1,:) &
+                                     !+ x%QDT( DOF_BF(K,2) )*RtHSdat%PLinVelES(K,J,DOF_BF(K,2),1,:)
+   
+            RtHSdat%LinVelES(:,J,K)  = LinVelHS + RtHSdat%LinVelEZ
+            DO I = 1,p%NPH   ! Loop through all DOFs associated with the angular motion of the hub (body H)
+   
+               TmpVec0 = 0.0 !CROSS_PRODUCT(   RtHSdat%PAngVelEH(p%PH(I),0,:), RtHSdat%rQS(:,K,J)            )  !bjj: this line can be optimized
+               TmpVec1 = 0.0 !CROSS_PRODUCT(   RtHSdat%PAngVelEH(p%PH(I),0,:),     EwHXrQS        + LinVelHS )  !bjj: this line can be optimized
+               TmpVec2 = 0.0 !CROSS_PRODUCT(   RtHSdat%PAngVelEH(p%PH(I),1,:), RtHSdat%rQS(:,K,J)            )  !bjj: this line can be optimized
+   
+               RtHSdat%PLinVelES(K,J,p%PH(I),0,:) = RtHSdat%PLinVelES(K,J,p%PH(I),0,:) + TmpVec0            !bjj: this line can be optimized
+               RtHSdat%PLinVelES(K,J,p%PH(I),1,:) = RtHSdat%PLinVelES(K,J,p%PH(I),1,:) + TmpVec1 + TmpVec2  !bjj: this line can be optimized
+   
+               RtHSdat%LinVelES(:,J,K)          = RtHSdat%LinVelES(:,J,K)   + x%QDT(p%PH(I))*RtHSdat%PLinVelES(K,J,p%PH(I),0,:)  !bjj: this line can be optimized
+               RtHSdat%LinAccESt(:,K,J)         = RtHSdat%LinAccESt(:,K,J)  + x%QDT(p%PH(I))*RtHSdat%PLinVelES(K,J,p%PH(I),1,:)  !bjj: this line can be optimized
+   
+            END DO ! I - all DOFs associated with the angular motion of the hub (body H)
+   
+         END DO !J = 0,p%TipNodes ! Loop through the blade nodes / elements
+         
+         
+      !JASON: USE TipNode HERE INSTEAD OF BldNodes IF YOU ALLOCATE AND DEFINE n1, n2, n3, m1, m2, AND m3 TO USE TipNode.  THIS WILL REQUIRE THAT THE AERODYNAMIC AND STRUCTURAL TWISTS, AeroTwst() AND ThetaS(), BE KNOWN AT THE TIP!!!
+         !IF (.NOT. p%BD4Blades) THEN
+         !   RtHSdat%LinVelESm2(K) = DOT_PRODUCT( RtHSdat%LinVelES(:,p%TipNode,K), CoordSys%m2(K,p%BldNodes,:) )
+         !END IF
+               
+      END DO !K = 1,p%NumBl
+   
+   
+      RtHSdat%PLinVelEW(       :,:,:) = RtHSdat%PLinVelEO(:,:,:)
+      DO I = 1,NPN   ! Loop through all DOFs associated with the angular motion of the nacelle (body N)
+   
+         TmpVec0 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEN(PN(I)   ,0,:), RtHSdat%rOW                 )
+         TmpVec1 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEN(PN(I)   ,0,:),     EwNXrOW                 )
+         TmpVec2 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEN(PN(I)   ,1,:), RtHSdat%rOW                 )
+         IF (I .LE. NPX) THEN 
+           RtHSdat%PLinVelEW(PN(I),0,:) = TmpVec0    +               RtHSdat%PLinVelEW(PN(I)   ,0,:)
+           RtHSdat%PLinVelEW(PN(I),1,:) = TmpVec1    + TmpVec2 +     RtHSdat%PLinVelEW(PN(I)   ,1,:)
+         ELSE
+           RtHSdat%PLinVelEW(PN(I),0,:) = 0.0
+           RtHSdat%PLinVelEW(PN(I),1,:) = 0.0
+         END IF 
+          LinAccEWt                   =  LinAccEWt + x%QDT(PN(I) )*RtHSdat%PLinVelEW(PN(I)   ,1,:)
+   
+      ENDDO          ! I - all DOFs associated with the angular motion of the nacelle (body N)
+   
+   
+      RtHSdat%PLinVelEI(       :,:,:) = RtHSdat%PLinVelEW(:,:,:)
+      DO I = 1,NPA   ! Loop through all DOFs associated with the angular motion of the tail (body A)
+   
+         TmpVec0 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEA(PA(I)   ,0,:), RtHSdat%rWI                 )
+         TmpVec1 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEA(PA(I)   ,0,:),     EwAXrWI                 )
+         TmpVec2 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEA(PA(I)   ,1,:), RtHSdat%rWI                 )
+         IF (I .LE. NPX) THEN 
+           RtHSdat%PLinVelEI(PA(I),0,:) = TmpVec0    +                       RtHSdat%PLinVelEI(PA(I)   ,0,:)
+           RtHSdat%PLinVelEI(PA(I),1,:) = TmpVec1    + TmpVec2 +             RtHSdat%PLinVelEI(PA(I)   ,1,:)
+         ELSE
+           RtHSdat%PLinVelEI(PA(I),0,:) = 0.0
+           RtHSdat%PLinVelEI(PA(I),1,:) = 0.0
+         END IF 
+         RtHSdat%LinAccEIt            =  RtHSdat%LinAccEIt + x%QDT(PA(I) )*RtHSdat%PLinVelEI(PA(I)   ,1,:)
+   
+      ENDDO          ! I - all DOFs associated with the angular motion of the tail (body A)
+   
+   
+      RtHSdat%PLinVelEJ(       :,:,:) = RtHSdat%PLinVelEW(:,:,:)
+      DO I = 1,NPA   ! Loop through all DOFs associated with the angular motion of the tail (body A)
+   
+         TmpVec0 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEA(PA(I)   ,0,:), RtHSdat%rWJ                 )
+         TmpVec1 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEA(PA(I)   ,0,:),     EwAXrWJ                 )
+         TmpVec2 = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEA(PA(I)   ,1,:), RtHSdat%rWJ                 )
+         IF (I .LE. NPX) THEN
+           RtHSdat%PLinVelEJ(PA(I),0,:) = TmpVec0    +               RtHSdat%PLinVelEJ(PA(I)   ,0,:)
+           RtHSdat%PLinVelEJ(PA(I),1,:) = TmpVec1    + TmpVec2 +     RtHSdat%PLinVelEJ(PA(I)   ,1,:)
+         ELSE
+           RtHSdat%PLinVelEJ(PA(I),0,:) = 0.0
+           RtHSdat%PLinVelEJ(PA(I),0,:) = 0.0
+         END IF
+          RtHSdat%LinAccEJt           =  RtHSdat%LinAccEJt + x%QDT(PA(I) )*RtHSdat%PLinVelEJ(PA(I)   ,1,:)
+   
+      ENDDO          ! I - all DOFs associated with the angular motion of the tail (body A)
+   
+      RtHSdat%PLinVelEK(       :,:,:) = RtHSdat%PLinVelEW(:,:,:)
+       LinVelEK               =  RtHSdat%LinVelEZ
+      DO I = 1,NPA   ! Loop through all DOFs associated with the angular motion of the tail (body A)
+   
+         TmpVec0  = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEA(PA(I)   ,0,:), RtHSdat%rWK                 )
+         TmpVec1  = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEA(PA(I)   ,0,:),         EwAXrWK             )
+         TmpVec2  = 0.0 ! CROSS_PRODUCT( RtHSdat%PAngVelEA(PA(I)   ,1,:), RtHSdat%rWK                 )
+         IF (I .LE. NPX) THEN
+           RtHSdat%PLinVelEK(PA(I),0,:) = TmpVec0    +                RtHSdat%PLinVelEK(PA(I)   ,0,:)
+           RtHSdat%PLinVelEK(PA(I),1,:) = TmpVec1    + TmpVec2 +      RtHSdat%PLinVelEK(PA(I)   ,1,:)
+         ELSE
+           RtHSdat%PLinVelEK(PA(I),0,:) = 0.0
+           RtHSdat%PLinVelEK(PA(I),1,:) = 0.0
+         END IF
+          LinVelEK                    =   LinVelEK  + x%QDT(PA(I) )*RtHSdat%PLinVelEK(PA(I)   ,0,:)
+          LinAccEKt                   =   LinAccEKt + x%QDT(PA(I) )*RtHSdat%PLinVelEK(PA(I)   ,1,:)
+   
+      ENDDO          ! I - all DOFs associated with the angular motion of the tail (body A)
+   
+   
+   
+      DO J = 0,p%TwrNodes  ! Loop through the tower nodes / elements
+   
+   
+         ! Define the partial linear velocities (and their 1st derivatives) of the current node (point T(HNodes(J))) in the inertia frame.
+         !  Also define the overall linear velocity of the current node in the inertia frame.
+         !  Also, define the portion of the linear acceleration of the current node in the inertia frame associated with
+         !    everything but the QD2T()'s:
+   
+         EwXXrZT                   = CROSS_PRODUCT(  RtHSdat%AngVelEX, RtHSdat%rZT(:,J) )
+   
+         RtHSdat%PLinVelET(J,       :,:,:) = RtHSdat%PLinVelEZ(:,:,:)  !bjj: can this line be optimized
+         RtHSdat%PLinVelET(J,DOF_TFA1,0,:) = 0.0 ! p%TwrFASF(1,J,0)*CoordSys%a1 - (   p%AxRedTFA(1,1,J)* x%QT(DOF_TFA1) &
+                                                 !                             + p%AxRedTFA(1,2,J)* x%QT(DOF_TFA2)   )*CoordSys%a2  
+         RtHSdat%PLinVelET(J,DOF_TSS1,0,:) = 0.0 ! p%TwrSSSF(1,J,0)*CoordSys%a3 - (   p%AxRedTSS(1,1,J)* x%QT(DOF_TSS1) &
+                                                 !                             + p%AxRedTSS(1,2,J)* x%QT(DOF_TSS2)   )*CoordSys%a2
+         RtHSdat%PLinVelET(J,DOF_TFA2,0,:) = 0.0 ! p%TwrFASF(2,J,0)*CoordSys%a1 - (   p%AxRedTFA(2,2,J)* x%QT(DOF_TFA2) &
+                                                 !                             + p%AxRedTFA(1,2,J)* x%QT(DOF_TFA1)   )*CoordSys%a2
+         RtHSdat%PLinVelET(J,DOF_TSS2,0,:) = 0.0 ! p%TwrSSSF(2,J,0)*CoordSys%a3 - (   p%AxRedTSS(2,2,J)* x%QT(DOF_TSS2) &
+                                                 !                             + p%AxRedTSS(1,2,J)* x%QT(DOF_TSS1)   )*CoordSys%a2
+   
+         TmpVec1 = 0.0 ! CROSS_PRODUCT( RtHSdat%AngVelEX, RtHSdat%PLinVelET(J,DOF_TFA1,0,:) )
+         TmpVec2 = 0.0 ! CROSS_PRODUCT( RtHSdat%AngVelEX, RtHSdat%PLinVelET(J,DOF_TSS1,0,:) )
+         TmpVec3 = 0.0 ! CROSS_PRODUCT( RtHSdat%AngVelEX, RtHSdat%PLinVelET(J,DOF_TFA2,0,:) )
+         TmpVec4 = 0.0 ! CROSS_PRODUCT( RtHSdat%AngVelEX, RtHSdat%PLinVelET(J,DOF_TSS2,0,:) )
+   
+         RtHSdat%PLinVelET(J,DOF_TFA1,1,:) = TmpVec1 - (   p%AxRedTFA(1,1,J)*x%QDT(DOF_TFA1) &
+                                                         + p%AxRedTFA(1,2,J)*x%QDT(DOF_TFA2)   )*CoordSys%a2
+         RtHSdat%PLinVelET(J,DOF_TSS1,1,:) = TmpVec2 - (   p%AxRedTSS(1,1,J)*x%QDT(DOF_TSS1) &
+                                                         + p%AxRedTSS(1,2,J)*x%QDT(DOF_TSS2)   )*CoordSys%a2
+         RtHSdat%PLinVelET(J,DOF_TFA2,1,:) = TmpVec3 - (   p%AxRedTFA(2,2,J)*x%QDT(DOF_TFA2) &
+                                                         + p%AxRedTFA(1,2,J)*x%QDT(DOF_TFA1)   )*CoordSys%a2
+         RtHSdat%PLinVelET(J,DOF_TSS2,1,:) = TmpVec4 - (   p%AxRedTSS(2,2,J)*x%QDT(DOF_TSS2) &
+                                                         + p%AxRedTSS(1,2,J)*x%QDT(DOF_TSS1)   )*CoordSys%a2
+   
+                 LinVelXT       = 0.0 !x%QDT(DOF_TFA1)*RtHSdat%PLinVelET(J,DOF_TFA1,0,:) &
+                                ! + x%QDT(DOF_TSS1)*RtHSdat%PLinVelET(J,DOF_TSS1,0,:) &
+                                ! + x%QDT(DOF_TFA2)*RtHSdat%PLinVelET(J,DOF_TFA2,0,:) &
+                                ! + x%QDT(DOF_TSS2)*RtHSdat%PLinVelET(J,DOF_TSS2,0,:)
+         RtHSdat%LinAccETt(:,J) = 0.0 ! x%QDT(DOF_TFA1)*RtHSdat%PLinVelET(J,DOF_TFA1,1,:) &
+                                ! + x%QDT(DOF_TSS1)*RtHSdat%PLinVelET(J,DOF_TSS1,1,:) &
+                                ! + x%QDT(DOF_TFA2)*RtHSdat%PLinVelET(J,DOF_TFA2,1,:) &
+                                ! + x%QDT(DOF_TSS2)*RtHSdat%PLinVelET(J,DOF_TSS2,1,:)
+   
+         RtHSdat%LinVelET(:,J)  = LinVelXT + RtHSdat%LinVelEZ
+         DO I = 1,NPX   ! Loop through all DOFs associated with the angular motion of the platform (body X)
+   
+            TmpVec0   = CROSS_PRODUCT( RtHSdat%PAngVelEX(PX(I),0,:), RtHSdat%rZT(:,J)            )
+            TmpVec1   = CROSS_PRODUCT( RtHSdat%PAngVelEX(PX(I),0,:), EwXXrZT      + LinVelXT )
+   
+            RtHSdat%PLinVelET(J,PX(I),0,:) = RtHSdat%PLinVelET(J,PX(I),0,:) + TmpVec0
+            RtHSdat%PLinVelET(J,PX(I),1,:) = RtHSdat%PLinVelET(J,PX(I),1,:) + TmpVec1
+   
+            RtHSdat%LinVelET( :,        J) = RtHSdat%LinVelET( :,        J) + x%QDT(PX(I))*RtHSdat%PLinVelET(J,PX(I),0,:)
+            RtHSdat%LinAccETt(:,        J) = RtHSdat%LinAccETt(:,        J) + x%QDT(PX(I))*RtHSdat%PLinVelET(J,PX(I),1,:)
+   
+         ENDDO          ! I - all DOFs associated with the angular motion of the platform (body X)
+   
+   
+      END DO ! J
+   
+   
+   END SUBROUTINE CalculateLinearVelPAccNoFan
+!----------------------------------------------------------------------------------------------------------------------------------
 !> This routine is used to calculate the forces and moments stored in other states that are used in
 !! both the CalcOutput and CalcContStateDeriv routines.
 SUBROUTINE CalculateForcesMoments( p, x, CoordSys, u, RtHSdat )
-!..................................................................................................................................
-
-      ! Passed variables
-   TYPE(ED_ParameterType),       INTENT(IN   )  :: p           !< Parameters
-   TYPE(ED_ContinuousStateType), INTENT(IN   )  :: x           !< Continuous states at Time
-   TYPE(ED_CoordSys),            INTENT(IN   )  :: CoordSys    !< The coordinate systems that have been set for these states/time
-   TYPE(ED_InputType),           INTENT(IN   )  :: u           !< The aero (blade) & nacelle forces/moments
-   TYPE(ED_RtHndSide),           INTENT(INOUT)  :: RtHSdat     !< data from the RtHndSid module (contains positions to be set)
-
-      ! Local variables
-   REAL(ReKi)                   :: TmpVec    (3)                                   ! A temporary vector used in various computations.
-   REAL(ReKi)                   :: TmpVec1   (3)                                   ! A temporary vector used in various computations.
-   REAL(ReKi)                   :: TmpVec2   (3)                                   ! A temporary vector used in various computations.
-   REAL(ReKi)                   :: TmpVec3   (3)                                   ! A temporary vector used in various computations.
-   REAL(ReKi)                   :: TmpVec4   (3)                                   ! A temporary vector used in various computations.
-   REAL(ReKi)                   :: TmpVec5   (3)                                   ! A temporary vector used in various computations.
-      
-!REAL(ReKi)                   :: rSAerCen  (3)                                   ! Position vector from a blade analysis node (point S) on the current blade to the aerodynamic center associated with the element.
-   REAL(ReKi), PARAMETER        :: FKAero   (3) = 0.0                              ! The tail fin aerodynamic force acting at point K, the center-of-pressure of the tail fin. (bjj: should be an input)
-   REAL(ReKi), PARAMETER        :: MAAero   (3) = 0.0                              ! The tail fin aerodynamic moment acting at point K, the center-of-pressure of the tail fin. (bjj: should be an input)   
-   
-   
-   INTEGER(IntKi)               :: I                                               ! Loops through some or all of the DOFs
-   INTEGER(IntKi)               :: J                                               ! Counter for elements
-   INTEGER(IntKi)               :: K                                               ! Counter for blades
-   INTEGER(IntKi)               :: NodeNum                                         ! Node number for blade element (on a single mesh)
-      
-!.....................................
-! Compute forces and moments from properties related to Aero inputs   
-!FSTipDrag
-!FSAero and MMAero
-!.....................................
-   DO K = 1,p%NumBl ! Loop through all blades
-      
-         ! Calculate the tip drag forces if necessary:
-      !bjj: add this back when we've figured out how to handle the tip brakes:
-      !RtHSdat%FSTipDrag(:,K) = m%CoordSys%m2(K,p%BldNodes,:)*SIGN( 0.5*p%AirDens*(RtHSdat%LinVelESm2(K)**2)*u%TBDrCon(K), -1.*RtHSdat%LinVelESm2(K) )
-      RtHSdat%FSTipDrag = 0.0_ReKi         ! Calculate the tip drag forces if necessary
-
-      
-   ! Calculate the normal and tangential aerodynamic forces and the aerodynamic
-   !   pitching moment at the current element per unit span by calling AeroDyn,
-   !   if necessary:
-      
-      DO J = 1,p%BldNodes ! Loop through the blade nodes / elements
-
-
-   ! Calculate the aerodynamic pitching moment arm (i.e., the position vector
-   !   from point S on the blade to the aerodynamic center of the element):
-
-         RtHSdat%rSAerCen(:,J,K) = p%rSAerCenn1(K,J)*CoordSys%n1(K,J,:) + p%rSAerCenn2(K,J)*CoordSys%n2(K,J,:)   
-
-!        rPAerCen     = m%RtHS%rPQ + m%RtHS%rQS(:,K,J) + m%RtHS%rSAerCen(:,J,K)     ! Position vector from teeter pin (point P)  to blade analysis node aerodynamic center.
-!        rAerCen      =                       m%RtHS%rS (:,K,J) + m%RtHS%rSAerCen(:,J,K)     ! Position vector from inertial frame origin to blade analysis node aerodynamic center.
-         
-
-   ! fill FSAero() and MMAero() with the forces resulting from inputs u%BladeLn2Mesh(K)%Force(1:2,:) and u%BladeLn2Mesh(K)%Moment(3,:):
-   ! [except, we're ignoring the additional nodes we added on the mesh end points]
-   
-         NodeNum = J ! we're ignoring the root and tip
-         
-         if (p%UseAD14) then
-            RtHSdat%FSAero(:,K,J) = ( u%BladePtLoads(K)%Force(1,NodeNum) * CoordSys%te1(K,J,:) &
-                                    + u%BladePtLoads(K)%Force(2,NodeNum) * CoordSys%te2(K,J,:) ) / p%DRNodes(J)
-
-            RtHSdat%MMAero(:,K,J) = CROSS_PRODUCT( RtHSdat%rSAerCen(:,J,K), RtHSdat%FSAero(:,K,J) )&
-                                  + u%BladePtLoads(K)%Moment(3,NodeNum)/p%DRNodes(J) * CoordSys%te3(K,J,:)        
-         else
-            RtHSdat%FSAero(1,K,J) =  u%BladePtLoads(K)%Force(1,NodeNum) / p%DRNodes(J)
-            RtHSdat%FSAero(2,K,J) =  u%BladePtLoads(K)%Force(3,NodeNum) / p%DRNodes(J) 
-            RtHSdat%FSAero(3,K,J) = -u%BladePtLoads(K)%Force(2,NodeNum) / p%DRNodes(J)
-
-            RtHSdat%MMAero(1,K,J) =  u%BladePtLoads(K)%Moment(1,NodeNum) / p%DRNodes(J)
-            RtHSdat%MMAero(2,K,J) =  u%BladePtLoads(K)%Moment(3,NodeNum) / p%DRNodes(J)
-            RtHSdat%MMAero(3,K,J) = -u%BladePtLoads(K)%Moment(2,NodeNum) / p%DRNodes(J)
-         end if
-                     
-         
-      END DO !J
-   END DO  ! K 
-   
-   
-!.....................................
-! PFrcS0B and PMomH0B  
-!.....................................
-DO K = 1,p%NumBl ! Loop through all blades
-
-      ! Initialize the partial forces and moments (including those associated
-      !   with the QD2T()'s and those that are not) at the blade root (point S(0))
-      !   using the tip brake effects:
-
-      RtHSdat%PFrcS0B(:,K,:) = 0.0 ! Initialize these partial
-      RtHSdat%PMomH0B(:,K,:) = 0.0 ! forces and moments to zero
-      DO I = 1,p%DOFs%NPSE(K)  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of blade K
-
-         TmpVec1 = -p%TipMass(K)*RtHSdat%PLinVelES(K,p%TipNode,p%DOFs%PSE(K,I),0,:)                            ! The portion of PFrcS0B associated with the tip brake
-
-         RtHSdat%PFrcS0B(:,K,p%DOFs%PSE(K,I)) = TmpVec1
-         RtHSdat%PMomH0B(:,K,p%DOFs%PSE(K,I)) = CROSS_PRODUCT( RtHSdat%rS0S(:,K,p%TipNode), TmpVec1 )          ! The portion of PMomH0B associated with the tip brake
-
-      ENDDO             ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of blade K  
-   
-   
-      DO J = 1,p%BldNodes ! Loop through the blade nodes / elements
-
-      ! Integrate to find the partial forces and moments (including those associated
-      !   with the QD2T()'s and those that are not) at the blade root (point S(0)):
-
-         DO I = 1,p%DOFs%NPSE(K)  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of blade K
-
-            TmpVec1 = -p%BElmntMass(J,K)*RtHSdat%PLinVelES(K,J,p%DOFs%PSE(K,I),0,:)   ! The portion of PFrcS0B associated with blade element J
-
-            RtHSdat%PFrcS0B(:,K,p%DOFs%PSE(K,I)) = RtHSdat%PFrcS0B(:,K,p%DOFs%PSE(K,I)) + TmpVec1
-            RtHSdat%PMomH0B(:,K,p%DOFs%PSE(K,I)) = RtHSdat%PMomH0B(:,K,p%DOFs%PSE(K,I)) + &
-                                                    CROSS_PRODUCT( RtHSdat%rS0S(:,K,J), TmpVec1 )                   ! The portion of PMomH0B associated with blade element J
-
-         ENDDO             ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of blade K
-      END DO
-      
-      
-   END DO     
-   
- 
-!.....................................
-! FrcS0Bt and MomH0Bt
-!.....................................
-   DO K = 1,p%NumBl ! Loop through all blades
-   
-      TmpVec1 = RtHSdat%FSTipDrag(:,K) - p%TipMass(K)*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccESt(:,K,p%TipNode) ) ! The portion of FrcS0Bt associated with the tip brake
-      RtHSdat%FrcS0Bt(:,K) = TmpVec1
-      RtHSdat%MomH0Bt(:,K) = CROSS_PRODUCT(  RtHSdat%rS0S(:,K,p%TipNode), TmpVec1 )                                 ! The portion of MomH0Bt associated with the tip brake
-
-      DO J = 1,p%BldNodes ! Loop through the blade nodes / elements      
-      
-         TmpVec1 = RtHSdat%FSAero(:,K,J)*p%DRNodes(J) - p%BElmntMass(J,K)*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccESt(:,K,J) ) ! The portion of FrcS0Bt associated with blade element J
-         TmpVec2 = CROSS_PRODUCT( RtHSdat%rS0S(:,K,J), TmpVec1 )                                    ! The portion of MomH0Bt associated with blade element J
-         TmpVec3 = RtHSdat%MMAero(:,K,J)*p%DRNodes(J)                                               ! The total external moment applied to blade element J
-
-         RtHSdat%FrcS0Bt(:,K) = RtHSdat%FrcS0Bt(:,K) + TmpVec1
-         RtHSdat%MomH0Bt(:,K) = RtHSdat%MomH0Bt(:,K) + TmpVec2 + TmpVec3
-      
-      END DO !J
-      
-   END DO !K   
-         
-      
-!.....................................
-! PFrcPRot AND PMomLPRot:  
-!   ( requires PFrcS0B and PMomH0B)
-!.....................................
-      ! Initialize the partial forces and moments (including those associated
-      !   with the QD2T()'s and those that are not) at the teeter pin (point P) using the hub mass effects:    
-
-   RtHSdat%PFrcPRot  = 0.0   ! Initialize these partial
-   RtHSdat%PMomLPRot = 0.0   ! forces and moments to zero
-   DO I = 1,p%DOFs%NPCE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the hub center of mass (point C)
-
-      TmpVec1 = -p%HubMass*RtHSdat%PLinVelEC(p%DOFs%PCE(I),0,:)     ! The portion of PFrcPRot  associated with the HubMass
-      TmpVec2 = CROSS_PRODUCT( RtHSdat%rPC, TmpVec1 )      ! The portion of PMomLPRot associated with the HubMass
-
-      RtHSdat%PFrcPRot (:,p%DOFs%PCE(I)) = TmpVec1
-      RtHSdat%PMomLPRot(:,p%DOFs%PCE(I)) = TmpVec2 - p%Hubg1Iner*CoordSys%g1*DOT_PRODUCT( CoordSys%g1, RtHSdat%PAngVelEH(p%DOFs%PCE(I),0,:) ) &
-                                                   - p%Hubg2Iner*CoordSys%g2*DOT_PRODUCT( CoordSys%g2, RtHSdat%PAngVelEH(p%DOFs%PCE(I),0,:) )
-
-   ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the hub center of mass (point C)
-
-   
-   DO K = 1,p%NumBl ! Loop through all blades
-   
-         ! Calculate the position vector from the teeter pin to the blade root:
-   
-      !rPS0(:,K) = RtHSdat%rPQ + p%HubRad*CoordSys%j3(K,:)   ! Position vector from teeter pin (point P) to blade root (point S(0)).
-            
-      ! Add the blade effects to the partial forces and moments (including those associated with the QD2T()'s and those that are 
-      !   not) at the teeter pin (point P):
-
-      DO I = 1,p%DOFs%NPSE(K)  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of blade K
-
-         TmpVec = CROSS_PRODUCT( RtHSdat%rPS0(:,K), RtHSdat%PFrcS0B(:,K,p%DOFs%PSE(K,I)) ) ! The portion of PMomLPRot associated with PFrcS0B.
-
-         RtHSdat%PFrcPRot (:,p%DOFs%PSE(K,I)) = RtHSdat%PFrcPRot (:,p%DOFs%PSE(K,I)) + RtHSdat%PFrcS0B(:,K,p%DOFs%PSE(K,I))
-         RtHSdat%PMomLPRot(:,p%DOFs%PSE(K,I)) = RtHSdat%PMomLPRot(:,p%DOFs%PSE(K,I)) + RtHSdat%PMomH0B(:,K,p%DOFs%PSE(K,I))+TmpVec
-
-      ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of blade K
-
-
-   END DO   ! K   
-
-!.....................................
-! FrcPRott and MomLPRott:
-!   (requires FrcS0Bt and MomH0Bt)
-!.....................................
-
-   TmpVec1 = -p%HubMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccECt )                     ! The portion of FrcPRott  associated with the HubMass
-   TmpVec2 = CROSS_PRODUCT( RtHSdat%rPC, TmpVec1 )                                        ! The portion of MomLPRott associated with the HubMass
-   TmpVec  = p%Hubg1Iner*CoordSys%g1*DOT_PRODUCT( CoordSys%g1, RtHSdat%AngVelEH ) &       ! = ( Hub inertia dyadic ) dot ( angular velocity of hub in the inertia frame )
-           + p%Hubg2Iner*CoordSys%g2*DOT_PRODUCT( CoordSys%g2, RtHSdat%AngVelEH )
-   TmpVec3 = CROSS_PRODUCT( -RtHSdat%AngVelEH, TmpVec )                                   ! = ( -angular velocity of hub in the inertia frame ) cross ( TmpVec )
-
-   RtHSdat%FrcPRott(1)  = TmpVec1(1) + u%HubPtLoad%Force(1,1)
-   RtHSdat%FrcPRott(2)  = TmpVec1(2) + u%HubPtLoad%Force(3,1)
-   RtHSdat%FrcPRott(3)  = TmpVec1(3) - u%HubPtLoad%Force(2,1)
-   
-   RtHSdat%MomLPRott    = TmpVec2 + TmpVec3 - p%Hubg1Iner*CoordSys%g1*DOT_PRODUCT( CoordSys%g1, RtHSdat%AngAccEHt ) &
-                                            - p%Hubg2Iner*CoordSys%g2*DOT_PRODUCT( CoordSys%g2, RtHSdat%AngAccEHt )                                          
-      
-   RtHSdat%MomLPRott(1) = RtHSdat%MomLPRott(1) + u%HubPtLoad%Moment(1,1)
-   RtHSdat%MomLPRott(2) = RtHSdat%MomLPRott(2) + u%HubPtLoad%Moment(3,1)
-   RtHSdat%MomLPRott(3) = RtHSdat%MomLPRott(3) - u%HubPtLoad%Moment(2,1)
-   
-   DO K = 1,p%NumBl ! Loop through all blades
-   
-         ! Calculate the position vector from the teeter pin to the blade root:
-   
-      !rPS0 = RtHSdat%rPQ + p%HubRad*m%CoordSys%j3(K,:)   ! Position vector from teeter pin (point P) to blade root (point S(0)).
-            
-      TmpVec = CROSS_PRODUCT( RtHSdat%rPS0(:,K), RtHSdat%FrcS0Bt(:,K) )       ! The portion of MomLPRott associated with FrcS0Bt.
-
-      RtHSdat%FrcPRott  = RtHSdat%FrcPRott  + RtHSdat%FrcS0Bt(:,K)
-      RtHSdat%MomLPRott = RtHSdat%MomLPRott + RtHSdat%MomH0Bt(:,K) + TmpVec
-
-   END DO   ! K
-
-   
-   ! Define the partial forces and moments (including those associated with
-   !   the QD2T()'s and those that are not) at the specified point on the
-   !   rotor-furl axis (point V) / nacelle (body N) using the structure that
-   !   furls with the rotor, generator, and rotor effects.
-   
-!.....................................
-! PMomNGnRt and PFrcVGnRt
-!  (requires PMomLPRot and PFrcPRot)
-!..................................... 
-   RtHSdat%PFrcVGnRt = RtHSdat%PFrcPRot    ! Initialize these partial forces and
-   RtHSdat%PMomNGnRt = RtHSdat%PMomLPRot   ! moments using the rotor effects
-   DO I = 1,p%DOFs%NActvDOF ! Loop through all active (enabled) DOFs
-
-      TmpVec = CROSS_PRODUCT( RtHSdat%rVP, RtHSdat%PFrcPRot(:,p%DOFs%SrtPS(I)) )  ! The portion of PMomNGnRt associated with the PFrcPRot
-
-      RtHSdat%PMomNGnRt(:,p%DOFs%SrtPS(I)) = RtHSdat%PMomNGnRt(:,p%DOFs%SrtPS(I)) + TmpVec
-
-   ENDDO             ! I - All active (enabled) DOFs
-   DO I = 1,p%DOFs%NPDE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the center of mass of the structure that furls with the rotor (not including rotor) (point D)
-
-      TmpVec1 = -p%RFrlMass*RtHSdat%PLinVelED(p%DOFs%PDE(I)  ,0,:)           ! The portion of PFrcVGnRt associated with the RFrlMass
-      TmpVec2 = CROSS_PRODUCT( RtHSdat%rVD,              TmpVec1 )  ! The portion of PMomNGnRt associated with the RFrlMass
-
-      RtHSdat%PFrcVGnRt(:,p%DOFs%PDE(I)  ) = RtHSdat%PFrcVGnRt(:,p%DOFs%PDE(I)  ) + TmpVec1
-
-      RtHSdat%PMomNGnRt(:,p%DOFs%PDE(I)  ) = RtHSdat%PMomNGnRt(:,p%DOFs%PDE(I)  ) + TmpVec2                                   &
-                                           - p%RrfaIner*CoordSys%rfa*DOT_PRODUCT( CoordSys%rfa, RtHSdat%PAngVelER(p%DOFs%PDE(I) ,0,:) ) &
-                                           - p%GenIner*CoordSys%c1 *DOT_PRODUCT(  CoordSys%c1 , RtHSdat%PAngVelEG(p%DOFs%PDE(I) ,0,:) )
-
-   ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the center of mass of the structure that furls with the rotor (not including rotor) (point D)
-   IF ( p%DOF_Flag(DOF_GeAz) )  THEN
-
-      RtHSdat%PMomNGnRt(:,DOF_GeAz) = RtHSdat%PMomNGnRt(:,DOF_GeAz)                                             &     ! The previous loop (DO I = 1,NPDE) misses the DOF_GeAz-contribution to: ( Generator inertia dyadic ) dot ( partial angular velocity of the generator in the inertia frame )
-                            -  p%GenIner*CoordSys%c1 *DOT_PRODUCT( CoordSys%c1, RtHSdat%PAngVelEG(DOF_GeAz,0,:) )     ! Thus, add this contribution if necessary.
-
-   ENDIF   
-   
-!.....................................
-! FrcVGnRtt and MomNGnRtt
-!  (requires FrcPRott and MomLPRott)
-!.....................................
-   TmpVec1 = -p%RFrlMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccEDt )                ! The portion of FrcVGnRtt associated with the RFrlMass
-   TmpVec2 = CROSS_PRODUCT( RtHSdat%rVD      ,  TmpVec1 )                             ! The portion of MomNGnRtt associated with the RFrlMass
-   TmpVec3 = CROSS_PRODUCT( RtHSdat%rVP      , RtHSdat%FrcPRott )                     ! The portion of MomNGnRtt associated with the FrcPRott
-   TmpVec  = p%RrfaIner*CoordSys%rfa*DOT_PRODUCT( CoordSys%rfa, RtHSdat%AngVelER )    ! = ( R inertia dyadic ) dot ( angular velocity of structure that furls with the rotor in the inertia frame )
-   TmpVec4 = CROSS_PRODUCT( -RtHSdat%AngVelER, TmpVec )                               ! = ( -angular velocity of structure that furls with the rotor in the inertia frame ) cross ( TmpVec )
-   TmpVec  =  p%GenIner*CoordSys%c1* DOT_PRODUCT( CoordSys%c1 , RtHSdat%AngVelEG )    ! = ( Generator inertia dyadic ) dot ( angular velocity of generator in the inertia frame )
-   TmpVec5 = CROSS_PRODUCT( -RtHSdat%AngVelEG, TmpVec )                               ! = ( -angular velocity of generator in the inertia frame ) cross ( TmpVec )
-
-   RtHSdat%FrcVGnRtt = RtHSdat%FrcPRott  + TmpVec1
-   RtHSdat%MomNGnRtt = RtHSdat%MomLPRott + TmpVec2 + TmpVec3 + TmpVec4 + TmpVec5            &
-                     - p%RrfaIner*CoordSys%rfa*DOT_PRODUCT( CoordSys%rfa, RtHSdat%AngAccERt ) &
-                     -  p%GenIner*CoordSys%c1 *DOT_PRODUCT( CoordSys%c1 , RtHSdat%AngAccEGt )
-
-
-!.....................................
-! PFrcWTail and PMomNTail
-!.....................................
-      ! Define the partial forces and moments (including those associated with the QD2T()'s and 
-      !   those that are not) at the specified point on the tail-furl axis (point W) / nacelle (body N) using the tail effects.
-
-   RtHSdat%PFrcWTail = 0.0   ! Initialize these partial
-   RtHSdat%PMomNTail = 0.0   ! forces and moments to zero
-   DO I = 1,p%DOFs%NPIE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tail boom center of mass (point I)
-
-      TmpVec1 = -p%BoomMass*RtHSdat%PLinVelEI(p%DOFs%PIE(I),0,:)    ! The portion of PFrcWTail associated with the BoomMass
-      TmpVec2 = -p%TFinMass*RtHSdat%PLinVelEJ(p%DOFs%PIE(I),0,:)    ! The portion of PFrcWTail associated with the TFinMass
-      TmpVec3 = CROSS_PRODUCT( RtHSdat%rWI, TmpVec1 )                      ! The portion of PMomNTail associated with the BoomMass
-      TmpVec4 = CROSS_PRODUCT( RtHSdat%rWJ, TmpVec2 )                      ! The portion of PMomNTail associated with the TFinMass
-
-      RtHSdat%PFrcWTail(:,p%DOFs%PIE(I)) = TmpVec1 + TmpVec2
-      RtHSdat%PMomNTail(:,p%DOFs%PIE(I)) = TmpVec3 + TmpVec4 - p%AtfaIner*CoordSys%tfa* &
-                                                             DOT_PRODUCT( CoordSys%tfa, RtHSdat%PAngVelEA(p%DOFs%PIE(I),0,:) )
-
-   ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tail boom center of mass (point I)
-
-!.....................................
-! FrcWTailt and MomNTailt
-!  (requires FKAero and MAAero)
-!.....................................
-
-   TmpVec1 = -p%BoomMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccEIt )                 ! The portion of FrcWTailt associated with the BoomMass
-   TmpVec2 = -p%TFinMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccEJt )                 ! The portion of FrcWTailt associated with the TFinMass
-   TmpVec3 = CROSS_PRODUCT( RtHSdat%rWI      , TmpVec1 )                           ! The portion of MomNTailt associated with the BoomMass
-   TmpVec4 = CROSS_PRODUCT( RtHSdat%rWJ      , TmpVec2 )                           ! The portion of MomNTailt associated with the TFinMass
-   TmpVec  = p%AtfaIner*CoordSys%tfa*DOT_PRODUCT( CoordSys%tfa, RtHSdat%AngVelEA )   ! = ( A inertia dyadic ) dot ( angular velocity of the tail in the inertia frame )
-   TmpVec5 = CROSS_PRODUCT( -RtHSdat%AngVelEA, TmpVec  )                           ! = ( -angular velocity of the tail in the inertia frame ) cross ( TmpVec )
-
-   RtHSdat%FrcWTailt = FKAero + TmpVec1 + TmpVec2
-   RtHSdat%MomNTailt = MAAero + TmpVec3 + TmpVec4 + TmpVec5         &
-                     + CROSS_PRODUCT( RtHSdat%rWK      , FKAero  )  &                         ! The portion of MomNTailt associated with FKAero
-                     - p%AtfaIner*CoordSys%tfa*DOT_PRODUCT( CoordSys%tfa, RtHSdat%AngAccEAt )   
-   
-!.....................................
-! PFrcONcRt and PMomBNcRt
-!  (requires PFrcVGnRt, PMomNGnRt, PFrcWTail, PMomNTail, )
-!.....................................
-
-   ! Define the partial forces and moments (including those associated with
-   !   the QD2T()'s and those that are not) at the yaw bearing (point O) /
-   !   base plate (body B) using the nacelle, generator, rotor, and tail effects.
-
-   RtHSdat%PFrcONcRt = RtHSdat%PFrcVGnRt + RtHSdat%PFrcWTail   ! Initialize these partial forces and moments using
-   RtHSdat%PMomBNcRt = RtHSdat%PMomNGnRt + RtHSdat%PMomNTail   ! the rotor, rotor-furl, generator, and tail effects
-   DO I = 1,p%DOFs%NActvDOF ! Loop through all active (enabled) DOFs
-
-      TmpVec = CROSS_PRODUCT( RtHSdat%rOV, RtHSdat%PFrcVGnRt(:,p%DOFs%SrtPS(I)) ) ! The portion of PMomBNcRt associated with the PFrcVGnRt
-
-      RtHSdat%PMomBNcRt(:,p%DOFs%SrtPS(I)) = RtHSdat%PMomBNcRt(:,p%DOFs%SrtPS(I)) + TmpVec
-
-   ENDDO             ! I - All active (enabled) DOFs
-   DO I = 1,p%DOFs%NPIE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tail boom center of mass (point I)
-
-      TmpVec = CROSS_PRODUCT( RtHSdat%rOW, RtHSdat%PFrcWTail(:,p%DOFs%PIE(I)  ) ) ! The portion of PMomBNcRt associated with the PFrcWTail
-
-      RtHSdat%PMomBNcRt(:,p%DOFs%PIE(I) ) = RtHSdat%PMomBNcRt(:,p%DOFs%PIE(I) ) + TmpVec
-
-   ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tail boom center of mass (point I)
-   DO I = 1,p%DOFs%NPUE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the nacelle center of mass (point U)
-
-      TmpVec1 = -p%NacMass*RtHSdat%PLinVelEU(p%DOFs%PUE(I),0,:)              ! The portion of PFrcONcRt associated with the NacMass
-      TmpVec2 = CROSS_PRODUCT( RtHSdat%rOU,               TmpVec1 ) ! The portion of PMomBNcRt associated with the NacMass
-
-      RtHSdat%PFrcONcRt(:,p%DOFs%PUE(I)  ) = RtHSdat%PFrcONcRt(:,p%DOFs%PUE(I) ) + TmpVec1
-      RtHSdat%PMomBNcRt(:,p%DOFs%PUE(I)  ) = RtHSdat%PMomBNcRt(:,p%DOFs%PUE(I) ) + TmpVec2 - p%Nacd2Iner*CoordSys%d2* &
-                                             DOT_PRODUCT( CoordSys%d2, RtHSdat%PAngVelEN(p%DOFs%PUE(I),0,:) )
-
-   ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the nacelle center of mass (point U)
-
-
-!.....................................
-! FrcONcRtt and MomBNcRtt
-!  (requires FrcVGnRtt, MomNGnRtt, FrcWTailt, MomNTailt)
-!.....................................
-
-   TmpVec1 = -p%NacMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccEUt )                ! The portion of FrcONcRtt associated with the NacMass
-   TmpVec2 = CROSS_PRODUCT( RtHSdat%rOU,           TmpVec1 )                         ! The portion of MomBNcRtt associated with the NacMass
-   TmpVec3 = CROSS_PRODUCT( RtHSdat%rOV, RtHSdat%FrcVGnRtt )                         ! The portion of MomBNcRtt associated with the FrcVGnRtt
-   TmpVec4 = CROSS_PRODUCT( RtHSdat%rOW, RtHSdat%FrcWTailt )                         ! The portion of MomBNcRtt associated with the FrcWTailt
-   TmpVec  = p%Nacd2Iner*CoordSys%d2*DOT_PRODUCT( CoordSys%d2, RtHSdat%AngVelEN )    ! = ( Nacelle inertia dyadic ) dot ( angular velocity of nacelle in the inertia frame )
-    
-   RtHSdat%FrcONcRtt = RtHSdat%FrcVGnRtt + RtHSdat%FrcWTailt + TmpVec1 + (/ u%NacelleLoads%Force(1,1), u%NacelleLoads%Force(3,1), -u%NacelleLoads%Force(2,1) /)
-   
-   RtHSdat%MomBNcRtt = RtHSdat%MomNGnRtt + RtHSdat%MomNTailt + TmpVec2 + TmpVec3 + TmpVec4  &
-                        + CROSS_PRODUCT( -RtHSdat%AngVelEN, TmpVec    )                     &    ! = ( -angular velocity of nacelle in the inertia frame ) cross ( TmpVec ) &
-                        - p%Nacd2Iner*CoordSys%d2*DOT_PRODUCT( CoordSys%d2, RtHSdat%AngAccENt ) &
-                        + (/ u%NacelleLoads%Moment(1,1), u%NacelleLoads%Moment(3,1), -u%NacelleLoads%Moment(2,1) /)
-
-!.....................................
-! PFTHydro and PMFHydro   
-!  (requires TwrAddedMass)   
-!.....................................
-
-   ! Compute the partial hydrodynamic forces and moments per unit length
-   !   (including those associated with the QD2T()'s and those that are not) at the current tower element (point T) / (body F):
-
-   ! NOTE: These forces are named PFTHydro, PMFHydro, FTHydrot, and MFHydrot. However, the names should not imply that the 
-   !       forces are a result of hydrodynamic contributions only.  These tower forces contain contributions from any external 
-   !       load acting on the tower other than loads transmitted from aerodynamics.  For example, these tower forces contain 
-   !       contributions from foundation stiffness and damping [not floating] or mooring line restoring and damping,
-   !       as well as hydrostatic and hydrodynamic contributions [offshore].
-
-   DO J=1,p%TwrNodes
-   
-      RtHSdat%PFTHydro(:,J,:) = 0.0
-      RtHSdat%PMFHydro(:,J,:) = 0.0
-      DO I = 1,p%DOFs%NPTE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tower
-
-         RtHSdat%PFTHydro(:,J,p%DOFs%PTE(I)) = &
-                                CoordSys%z1*( - u%TwrAddedMass(DOF_Sg,DOF_Sg,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,1) &
-                                              + u%TwrAddedMass(DOF_Sg,DOF_Sw,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,3) &
-                                              - u%TwrAddedMass(DOF_Sg,DOF_Hv,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,2) &
-                                              - u%TwrAddedMass(DOF_Sg,DOF_R ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,1) &
-                                              + u%TwrAddedMass(DOF_Sg,DOF_P ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,3) &
-                                              - u%TwrAddedMass(DOF_Sg,DOF_Y ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,2)   ) &
-                              - CoordSys%z3*( - u%TwrAddedMass(DOF_Sw,DOF_Sg,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,1) &
-                                              + u%TwrAddedMass(DOF_Sw,DOF_Sw,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,3) &
-                                              - u%TwrAddedMass(DOF_Sw,DOF_Hv,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,2) &
-                                              - u%TwrAddedMass(DOF_Sw,DOF_R ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,1) &
-                                              + u%TwrAddedMass(DOF_Sw,DOF_P ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,3) &
-                                              - u%TwrAddedMass(DOF_Sw,DOF_Y ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,2)   ) &
-                              + CoordSys%z2*( - u%TwrAddedMass(DOF_Hv,DOF_Sg,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,1) &
-                                              + u%TwrAddedMass(DOF_Hv,DOF_Sw,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,3) &
-                                              - u%TwrAddedMass(DOF_Hv,DOF_Hv,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,2) &
-                                              - u%TwrAddedMass(DOF_Hv,DOF_R ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,1) &
-                                              + u%TwrAddedMass(DOF_Hv,DOF_P ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,3) &
-                                              - u%TwrAddedMass(DOF_Hv,DOF_Y ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,2)   )
-         RtHSdat%PMFHydro(:,J,p%DOFs%PTE(I)) = &
-                                CoordSys%z1*( - u%TwrAddedMass(DOF_R ,DOF_Sg,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,1) &
-                                              + u%TwrAddedMass(DOF_R ,DOF_Sw,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,3) &
-                                              - u%TwrAddedMass(DOF_R ,DOF_Hv,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,2) &
-                                              - u%TwrAddedMass(DOF_R ,DOF_R ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,1) &
-                                              + u%TwrAddedMass(DOF_R ,DOF_P ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,3) &
-                                              - u%TwrAddedMass(DOF_R ,DOF_Y ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,2)   ) &
-                              - CoordSys%z3*( - u%TwrAddedMass(DOF_P ,DOF_Sg,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,1) &
-                                              + u%TwrAddedMass(DOF_P ,DOF_Sw,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,3) &
-                                              - u%TwrAddedMass(DOF_P ,DOF_Hv,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,2) &
-                                              - u%TwrAddedMass(DOF_P ,DOF_R ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,1) &
-                                              + u%TwrAddedMass(DOF_P ,DOF_P ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,3) &
-                                              - u%TwrAddedMass(DOF_P ,DOF_Y ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,2)   ) &
-                              + CoordSys%z2*( - u%TwrAddedMass(DOF_Y ,DOF_Sg,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,1) &
-                                              + u%TwrAddedMass(DOF_Y ,DOF_Sw,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,3) &
-                                              - u%TwrAddedMass(DOF_Y ,DOF_Hv,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,2) &
-                                              - u%TwrAddedMass(DOF_Y ,DOF_R ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,1) &
-                                              + u%TwrAddedMass(DOF_Y ,DOF_P ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,3) &
-                                              - u%TwrAddedMass(DOF_Y ,DOF_Y ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,2)   )
-
-      END DO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tower
-   END DO !J
-
-!.....................................
-! FTHydrot and MFHydrot   
-!  (requires TwrAddedMass)   
-!.....................................
-   
-   DO J=1,p%TwrNodes
-      RtHSdat%FTHydrot(:,J) = CoordSys%z1*( u%TowerPtLoads%Force(DOF_Sg,J)/p%DHNodes(J) &
-                                                  - u%TwrAddedMass(DOF_Sg,DOF_Sg,J)*RtHSdat%LinAccETt(1,J) &
-                                                  + u%TwrAddedMass(DOF_Sg,DOF_Sw,J)*RtHSdat%LinAccETt(3,J) &
-                                                  - u%TwrAddedMass(DOF_Sg,DOF_Hv,J)*RtHSdat%LinAccETt(2,J) &
-                                                  - u%TwrAddedMass(DOF_Sg,DOF_R ,J)*RtHSdat%AngAccEFt(1,J) &
-                                                  + u%TwrAddedMass(DOF_Sg,DOF_P ,J)*RtHSdat%AngAccEFt(3,J) &
-                                                  - u%TwrAddedMass(DOF_Sg,DOF_Y ,J)*RtHSdat%AngAccEFt(2,J)   ) &
-                            - CoordSys%z3*( u%TowerPtLoads%Force(DOF_Sw,J)/p%DHNodes(J) &
-                                                  - u%TwrAddedMass(DOF_Sw,DOF_Sg,J)*RtHSdat%LinAccETt(1,J) &
-                                                  + u%TwrAddedMass(DOF_Sw,DOF_Sw,J)*RtHSdat%LinAccETt(3,J) &
-                                                  - u%TwrAddedMass(DOF_Sw,DOF_Hv,J)*RtHSdat%LinAccETt(2,J) &
-                                                  - u%TwrAddedMass(DOF_Sw,DOF_R ,J)*RtHSdat%AngAccEFt(1,J) &
-                                                  + u%TwrAddedMass(DOF_Sw,DOF_P ,J)*RtHSdat%AngAccEFt(3,J) &
-                                                  - u%TwrAddedMass(DOF_Sw,DOF_Y ,J)*RtHSdat%AngAccEFt(2,J)   ) &
-                             + CoordSys%z2*( u%TowerPtLoads%Force(DOF_Hv,J)/p%DHNodes(J) &
-                                                  - u%TwrAddedMass(DOF_Hv,DOF_Sg,J)*RtHSdat%LinAccETt(1,J) &
-                                                  + u%TwrAddedMass(DOF_Hv,DOF_Sw,J)*RtHSdat%LinAccETt(3,J) &
-                                                  - u%TwrAddedMass(DOF_Hv,DOF_Hv,J)*RtHSdat%LinAccETt(2,J) &
-                                                  - u%TwrAddedMass(DOF_Hv,DOF_R ,J)*RtHSdat%AngAccEFt(1,J) &
-                                                  + u%TwrAddedMass(DOF_Hv,DOF_P ,J)*RtHSdat%AngAccEFt(3,J) &
-                                                  - u%TwrAddedMass(DOF_Hv,DOF_Y ,J)*RtHSdat%AngAccEFt(2,J)   )
-      RtHSdat%MFHydrot(:,J) = CoordSys%z1*( u%TowerPtLoads%Moment(DOF_R-3,J)/p%DHNodes(J) &
-                                                  - u%TwrAddedMass(DOF_R ,DOF_Sg,J)*RtHSdat%LinAccETt(1,J) &
-                                                  + u%TwrAddedMass(DOF_R ,DOF_Sw,J)*RtHSdat%LinAccETt(3,J) &
-                                                  - u%TwrAddedMass(DOF_R ,DOF_Hv,J)*RtHSdat%LinAccETt(2,J) &
-                                                  - u%TwrAddedMass(DOF_R ,DOF_R ,J)*RtHSdat%AngAccEFt(1,J) &
-                                                  + u%TwrAddedMass(DOF_R ,DOF_P ,J)*RtHSdat%AngAccEFt(3,J) &
-                                                  - u%TwrAddedMass(DOF_R ,DOF_Y ,J)*RtHSdat%AngAccEFt(2,J)   ) &
-                            - CoordSys%z3*( u%TowerPtLoads%Moment(DOF_P-3 ,J)/p%DHNodes(J) &
-                                                  - u%TwrAddedMass(DOF_P ,DOF_Sg,J)*RtHSdat%LinAccETt(1,J) &
-                                                  + u%TwrAddedMass(DOF_P ,DOF_Sw,J)*RtHSdat%LinAccETt(3,J) &
-                                                  - u%TwrAddedMass(DOF_P ,DOF_Hv,J)*RtHSdat%LinAccETt(2,J) &
-                                                  - u%TwrAddedMass(DOF_P ,DOF_R ,J)*RtHSdat%AngAccEFt(1,J) &
-                                                  + u%TwrAddedMass(DOF_P ,DOF_P ,J)*RtHSdat%AngAccEFt(3,J) &
-                                                  - u%TwrAddedMass(DOF_P ,DOF_Y ,J)*RtHSdat%AngAccEFt(2,J)   ) &
-                            + CoordSys%z2*( u%TowerPtLoads%Moment(DOF_Y-3 ,J)/p%DHNodes(J) &
-                                                  - u%TwrAddedMass(DOF_Y ,DOF_Sg,J)*RtHSdat%LinAccETt(1,J) &
-                                                  + u%TwrAddedMass(DOF_Y ,DOF_Sw,J)*RtHSdat%LinAccETt(3,J) &
-                                                  - u%TwrAddedMass(DOF_Y ,DOF_Hv,J)*RtHSdat%LinAccETt(2,J) &
-                                                  - u%TwrAddedMass(DOF_Y ,DOF_R ,J)*RtHSdat%AngAccEFt(1,J) &
-                                                  + u%TwrAddedMass(DOF_Y ,DOF_P ,J)*RtHSdat%AngAccEFt(3,J) &
-                                                  - u%TwrAddedMass(DOF_Y ,DOF_Y ,J)*RtHSdat%AngAccEFt(2,J)   )
-
-   END DO !J
-   
-!.....................................
-! PFrcT0Trb and PMomX0Trb
-!  (requires PFrcONcRt, PMomBNcRt, PFrcT0Trb, PMomX0Trb, PFTHydro, PMFHydro)
-!.....................................
-
-      ! Initialize the partial forces and moments (including those associated
-      !   with the QD2T()'s and those that are not) at the tower base (point T(0))  using everything but the tower:
-
-   RtHSdat%PFrcT0Trb = RtHSdat%PFrcONcRt   ! Initialize these partial forces and moments
-   RtHSdat%PMomX0Trb = RtHSdat%PMomBNcRt   ! using all of the effects above the yaw bearing
-   DO I = 1,p%DOFs%NActvDOF ! Loop through all active (enabled) DOFs
-
-      TmpVec  = CROSS_PRODUCT(  RtHSdat%rT0O, RtHSdat%PFrcONcRt(:,p%DOFs%SrtPS(I)) )   ! The portion of PMomX0Trb associated with the PFrcONcRt
-
-      RtHSdat%PMomX0Trb(:,p%DOFs%SrtPS(I)) = RtHSdat%PMomX0Trb(:,p%DOFs%SrtPS(I)) + TmpVec
-
-   ENDDO             ! I - All active (enabled) DOFs
-   DO I = 1,p%DOFs%NPTE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the yaw bearing center of mass (point O)
-
-      TmpVec1 = -p%YawBrMass*RtHSdat%PLinVelEO(p%DOFs%PTE(I),0,:)               ! The portion of PFrcT0Trb associated with the YawBrMass
-      TmpVec2 = CROSS_PRODUCT( RtHSdat%rT0O,               TmpVec1 )   ! The portion of PMomX0Trb associated with the YawBrMass
-
-      RtHSdat%PFrcT0Trb(:,p%DOFs%PTE(I)  ) = RtHSdat%PFrcT0Trb(:,p%DOFs%PTE(I)  ) + TmpVec1
-      RtHSdat%PMomX0Trb(:,p%DOFs%PTE(I)  ) = RtHSdat%PMomX0Trb(:,p%DOFs%PTE(I)  ) + TmpVec2
-
-   ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the yaw bearing center of mass (point O)
-
-   TmpVec1 = -p%YawBrMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccEOt ) ! The portion of FrcT0Trbt associated with the YawBrMass
-   TmpVec2 = CROSS_PRODUCT( RtHSdat%rT0O,   TmpVec1 )               ! The portion of MomX0Trbt associated with the YawBrMass
-   TmpVec3 = CROSS_PRODUCT( RtHSdat%rT0O, RtHSdat%FrcONcRtt )               ! The portion of MomX0Trbt associated with the FrcONcRtt
-
-   RtHSdat%FrcT0Trbt = RtHSdat%FrcONcRtt + TmpVec1
-   RtHSdat%MomX0Trbt = RtHSdat%MomBNcRtt + TmpVec2 + TmpVec3   
-   
-   ! Integrate to find the total partial forces and moments (including those
-   !   associated with the QD2T()'s and those that are not) at the tower base (point T(0)):
-   DO J=1,p%TwrNodes
-
-      DO I = 1,p%DOFs%NPTE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tower
-
-         TmpVec1 = RtHSdat%PFTHydro(:,J,p%DOFs%PTE(I))*p%DHNodes(J) - p%TElmntMass(J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,:)           ! The portion of PFrcT0Trb associated with tower element J
-         TmpVec2 = CROSS_PRODUCT( RtHSdat%rT0T(:,J), TmpVec1 )                 ! The portion of PMomX0Trb associated with tower element J
-         TmpVec3 = RtHSdat%PMFHydro(:,J,p%DOFs%PTE(I))*p%DHNodes(J)             ! The added moment applied at tower element J
-
-         RtHSdat%PFrcT0Trb(:,p%DOFs%PTE(I)) = RtHSdat%PFrcT0Trb(:,p%DOFs%PTE(I)) + TmpVec1
-         RtHSdat%PMomX0Trb(:,p%DOFs%PTE(I)) = RtHSdat%PMomX0Trb(:,p%DOFs%PTE(I)) + TmpVec2 + TmpVec3
-
-      ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tower
-
-      TmpVec1 = ( RtHSdat%FTHydrot(:,J) )*p%DHNodes(J) &
-              - p%TElmntMass(J)*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccETt(:,J) )          ! The portion of FrcT0Trbt associated with tower element J
-      TmpVec2 = CROSS_PRODUCT( RtHSdat%rT0T(:,J), TmpVec1 )                                 ! The portion of MomX0Trbt associated with tower element J
-      TmpVec3 = ( RtHSdat%MFHydrot(:,J) )*p%DHNodes(J)                                      ! The external moment applied to tower element J
-
-      RtHSdat%FrcT0Trbt = RtHSdat%FrcT0Trbt + TmpVec1
-
-      RtHSdat%MomX0Trbt = RtHSdat%MomX0Trbt + TmpVec2 + TmpVec3
-
-   END DO !J
-
-!.....................................
-! PFZHydro and  PMXHydro  
-!  ( requires PtfmAddedMass )
-!.....................................   
-   
    !..................................................................................................................................
-   ! Compute the partial platform forces and moments (including those associated with the QD2T()'s and those that are not) at the
-   ! platform reference (point Z) / (body X).
-   !
-   ! NOTE: These forces are named PFZHydro, PMXHydro, FZHydrot, and MXHydrot. However, the names should not imply that the forces
-   !   are a result of hydrodynamic contributions only. These platform forces contain contributions from any external load acting
-   !   on the platform other than loads transmitted from the wind turbine. For example, these platform forces contain contributions
-   !   from foundation stiffness and damping [not floating] or mooring line restoring and damping [floating], as well as hydrostatic
-   !   and hydrodynamic contributions [offshore].
-   !bjj: m%RtHS%PFZHydro, %PMXHydro, %FZHydrot, and %MXHydrot are not used in the output routine anymore
-   !      (because of their dependence on inputs, u)
-
-   RtHSdat%PFZHydro = 0.0
-   RtHSdat%PMXHydro = 0.0
-   DO I = 1,p%DOFs%NPYE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the platform center of mass (point Y)
-
-      RtHSdat%PFZHydro(p%DOFs%PYE(I),:) = - u%PtfmAddedMass(DOF_Sg,p%DOFs%PYE(I))*RtHSdat%PLinVelEZ(DOF_Sg,0,:) &
-                                          - u%PtfmAddedMass(DOF_Sw,p%DOFs%PYE(I))*RtHSdat%PLinVelEZ(DOF_Sw,0,:) &
-                                          - u%PtfmAddedMass(DOF_Hv,p%DOFs%PYE(I))*RtHSdat%PLinVelEZ(DOF_Hv,0,:)
-      RtHSdat%PMXHydro(p%DOFs%PYE(I),:) = - u%PtfmAddedMass(DOF_R ,p%DOFs%PYE(I))*RtHSdat%PAngVelEX(DOF_R ,0,:) &
-                                          - u%PtfmAddedMass(DOF_P ,p%DOFs%PYE(I))*RtHSdat%PAngVelEX(DOF_P ,0,:) &
-                                          - u%PtfmAddedMass(DOF_Y ,p%DOFs%PYE(I))*RtHSdat%PAngVelEX(DOF_Y ,0,:)
-
-   ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the platform center of mass (point Y)
-
-   RtHSdat%FZHydrot = u%PlatformPtMesh%Force(DOF_Sg,1)*RtHSdat%PLinVelEZ(DOF_Sg,0,:) &
-                    + u%PlatformPtMesh%Force(DOF_Sw,1)*RtHSdat%PLinVelEZ(DOF_Sw,0,:) &
-                    + u%PlatformPtMesh%Force(DOF_Hv,1)*RtHSdat%PLinVelEZ(DOF_Hv,0,:)
-   RtHSdat%MXHydrot = u%PlatformPtMesh%Moment(DOF_R-3,1)*RtHSdat%PAngVelEX(DOF_R ,0,:) &
-                    + u%PlatformPtMesh%Moment(DOF_P-3,1)*RtHSdat%PAngVelEX(DOF_P ,0,:) &
-                    + u%PlatformPtMesh%Moment(DOF_Y-3,1)*RtHSdat%PAngVelEX(DOF_Y ,0,:)
    
-!.....................................
-! PFrcZAll and PMomXAll  
-!  (requires PFrcT0Trb, PMomX0Trb, PFZHydro, PMXHydro )
-!.....................................   
-
-   ! Define the partial forces and moments (including those associated with the QD2T()'s and those that are not) at the
-   !   platform reference (point Z) / (body X) using the turbine and platform effects:
-
-   RtHSdat%PFrcZAll = RtHSdat%PFrcT0Trb ! Initialize these partial forces and moments
-   RtHSdat%PMomXAll = RtHSdat%PMomX0Trb ! using the effects from the wind turbine
-   DO I = 1,p%DOFs%NActvDOF ! Loop through all active (enabled) DOFs
-
-      TmpVec = CROSS_PRODUCT( RtHSdat%rZT0, RtHSdat%PFrcT0Trb(:,p%DOFs%SrtPS(I)) )   ! The portion of PMomXAll associated with the PFrcT0Trb
-
-      RtHSdat%PMomXAll(:,p%DOFs%SrtPS(I)) = RtHSdat%PMomXAll(:,p%DOFs%SrtPS(I)) + TmpVec
-
-   ENDDO             ! I - All active (enabled) DOFs
-   DO I = 1,p%DOFs%NPYE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the platform center of mass (point Y)
-
-      TmpVec1 = -p%PtfmMass*RtHSdat%PLinVelEY(p%DOFs%PYE(I),0,:)                ! The portion of PFrcZAll associated with the PtfmMass
-      TmpVec2 = CROSS_PRODUCT( RtHSdat%rZY ,               TmpVec1 )   ! The portion of PMomXAll associated with the PtfmMass
-
-      RtHSdat%PFrcZAll(:,p%DOFs%PYE(I)) = RtHSdat%PFrcZAll(:,p%DOFs%PYE(I)  )        + RtHSdat%PFZHydro(p%DOFs%PYE(I),:) + TmpVec1
-      RtHSdat%PMomXAll(:,p%DOFs%PYE(I)) = RtHSdat%PMomXAll(:,p%DOFs%PYE(I)  )        + RtHSdat%PMXHydro(p%DOFs%PYE(I),:) + TmpVec2 &
-                                    - p%PtfmRIner*CoordSys%a1*DOT_PRODUCT( CoordSys%a1, RtHSdat%PAngVelEX(p%DOFs%PYE(I),0,:) )   &
-                                    - p%PtfmYIner*CoordSys%a2*DOT_PRODUCT( CoordSys%a2, RtHSdat%PAngVelEX(p%DOFs%PYE(I),0,:) )   &
-                                    - p%PtfmPIner*CoordSys%a3*DOT_PRODUCT( CoordSys%a3, RtHSdat%PAngVelEX(p%DOFs%PYE(I),0,:) )
-
-   ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the platform center of mass (point Y)
-
-!.....................................
-! FrcZAllt and MomXAllt
-!  (requires FrcT0Trbt, MomX0Trbt)
-!.....................................
-
-   TmpVec1 = -p%PtfmMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccEYt  )                                              ! The portion of FrcZAllt associated with the PtfmMass
-   TmpVec2 = CROSS_PRODUCT( RtHSdat%rZY      ,   TmpVec1 )                                                                      ! The portion of MomXAllt associated with the PtfmMass
-   TmpVec3 = CROSS_PRODUCT( RtHSdat%rZT0     , RtHSdat%FrcT0Trbt )                                                      ! The portion of MomXAllt associated with the FrcT0Trbt
-   TmpVec  = p%PtfmRIner*CoordSys%a1*DOT_PRODUCT( CoordSys%a1, RtHSdat%AngVelEX  ) &      ! = ( Platform inertia dyadic ) dot ( angular velocity of platform in the inertia frame )
-           + p%PtfmYIner*CoordSys%a2*DOT_PRODUCT( CoordSys%a2, RtHSdat%AngVelEX  ) &
-           + p%PtfmPIner*CoordSys%a3*DOT_PRODUCT( CoordSys%a3, RtHSdat%AngVelEX  )
-   TmpVec4 = CROSS_PRODUCT( -RtHSdat%AngVelEX,   TmpVec  )                                                      ! = ( -angular velocity of platform in the inertia frame ) cross ( TmpVec )
-
-   RtHSdat%FrcZAllt = RtHSdat%FrcT0Trbt + RtHSdat%FZHydrot + TmpVec1
-   RtHSdat%MomXAllt = RtHSdat%MomX0Trbt + RtHSdat%MXHydrot + TmpVec2 + TmpVec3 + TmpVec4   
+         ! Passed variables
+      TYPE(ED_ParameterType),       INTENT(IN   )  :: p           !< Parameters
+      TYPE(ED_ContinuousStateType), INTENT(IN   )  :: x           !< Continuous states at Time
+      TYPE(ED_CoordSys),            INTENT(IN   )  :: CoordSys    !< The coordinate systems that have been set for these states/time
+      TYPE(ED_InputType),           INTENT(IN   )  :: u           !< The aero (blade) & nacelle forces/moments
+      TYPE(ED_RtHndSide),           INTENT(INOUT)  :: RtHSdat     !< data from the RtHndSid module (contains positions to be set)
+   
+         ! Local variables
+      REAL(ReKi)                   :: TmpVec    (3)                                   ! A temporary vector used in various computations.
+      REAL(ReKi)                   :: TmpVec1   (3)                                   ! A temporary vector used in various computations.
+      REAL(ReKi)                   :: TmpVec2   (3)                                   ! A temporary vector used in various computations.
+      REAL(ReKi)                   :: TmpVec3   (3)                                   ! A temporary vector used in various computations.
+      REAL(ReKi)                   :: TmpVec4   (3)                                   ! A temporary vector used in various computations.
+      REAL(ReKi)                   :: TmpVec5   (3)                                   ! A temporary vector used in various computations.
+         
+   !REAL(ReKi)                   :: rSAerCen  (3)                                   ! Position vector from a blade analysis node (point S) on the current blade to the aerodynamic center associated with the element.
+      REAL(ReKi), PARAMETER        :: FKAero   (3) = 0.0                              ! The tail fin aerodynamic force acting at point K, the center-of-pressure of the tail fin. (bjj: should be an input)
+      REAL(ReKi), PARAMETER        :: MAAero   (3) = 0.0                              ! The tail fin aerodynamic moment acting at point K, the center-of-pressure of the tail fin. (bjj: should be an input)   
+      
+      
+      INTEGER(IntKi)               :: I                                               ! Loops through some or all of the DOFs
+      INTEGER(IntKi)               :: J                                               ! Counter for elements
+      INTEGER(IntKi)               :: K                                               ! Counter for blades
+      INTEGER(IntKi)               :: NodeNum                                         ! Node number for blade element (on a single mesh)
+         
+   !.....................................
+   ! Compute forces and moments from properties related to Aero inputs   
+   !FSTipDrag
+   !FSAero and MMAero
+   !.....................................
+      DO K = 1,p%NumBl ! Loop through all blades
+         
+            ! Calculate the tip drag forces if necessary:
+         !bjj: add this back when we've figured out how to handle the tip brakes:
+         !RtHSdat%FSTipDrag(:,K) = m%CoordSys%m2(K,p%BldNodes,:)*SIGN( 0.5*p%AirDens*(RtHSdat%LinVelESm2(K)**2)*u%TBDrCon(K), -1.*RtHSdat%LinVelESm2(K) )
+         RtHSdat%FSTipDrag = 0.0_ReKi         ! Calculate the tip drag forces if necessary
+   
+         
+      ! Calculate the normal and tangential aerodynamic forces and the aerodynamic
+      !   pitching moment at the current element per unit span by calling AeroDyn,
+      !   if necessary:
+         
+         DO J = 1,p%BldNodes ! Loop through the blade nodes / elements
    
    
-END SUBROUTINE CalculateForcesMoments
+      ! Calculate the aerodynamic pitching moment arm (i.e., the position vector
+      !   from point S on the blade to the aerodynamic center of the element):
+   
+            RtHSdat%rSAerCen(:,J,K) = p%rSAerCenn1(K,J)*CoordSys%n1(K,J,:) + p%rSAerCenn2(K,J)*CoordSys%n2(K,J,:)   
+   
+   !        rPAerCen     = m%RtHS%rPQ + m%RtHS%rQS(:,K,J) + m%RtHS%rSAerCen(:,J,K)     ! Position vector from teeter pin (point P)  to blade analysis node aerodynamic center.
+   !        rAerCen      =                       m%RtHS%rS (:,K,J) + m%RtHS%rSAerCen(:,J,K)     ! Position vector from inertial frame origin to blade analysis node aerodynamic center.
+            
+   
+      ! fill FSAero() and MMAero() with the forces resulting from inputs u%BladeLn2Mesh(K)%Force(1:2,:) and u%BladeLn2Mesh(K)%Moment(3,:):
+      ! [except, we're ignoring the additional nodes we added on the mesh end points]
+      
+            NodeNum = J ! we're ignoring the root and tip
+            
+            if (p%UseAD14) then
+               RtHSdat%FSAero(:,K,J) = ( u%BladePtLoads(K)%Force(1,NodeNum) * CoordSys%te1(K,J,:) &
+                                       + u%BladePtLoads(K)%Force(2,NodeNum) * CoordSys%te2(K,J,:) ) / p%DRNodes(J)
+   
+               RtHSdat%MMAero(:,K,J) = CROSS_PRODUCT( RtHSdat%rSAerCen(:,J,K), RtHSdat%FSAero(:,K,J) )&
+                                     + u%BladePtLoads(K)%Moment(3,NodeNum)/p%DRNodes(J) * CoordSys%te3(K,J,:)        
+            else
+               RtHSdat%FSAero(1,K,J) =  u%BladePtLoads(K)%Force(1,NodeNum) / p%DRNodes(J)
+               RtHSdat%FSAero(2,K,J) =  u%BladePtLoads(K)%Force(3,NodeNum) / p%DRNodes(J) 
+               RtHSdat%FSAero(3,K,J) = -u%BladePtLoads(K)%Force(2,NodeNum) / p%DRNodes(J)
+   
+               RtHSdat%MMAero(1,K,J) =  u%BladePtLoads(K)%Moment(1,NodeNum) / p%DRNodes(J)
+               RtHSdat%MMAero(2,K,J) =  u%BladePtLoads(K)%Moment(3,NodeNum) / p%DRNodes(J)
+               RtHSdat%MMAero(3,K,J) = -u%BladePtLoads(K)%Moment(2,NodeNum) / p%DRNodes(J)
+            end if
+                        
+            
+         END DO !J
+      END DO  ! K 
+      
+      
+   !.....................................
+   ! PFrcS0B and PMomH0B  
+   !.....................................
+   DO K = 1,p%NumBl ! Loop through all blades
+   
+         ! Initialize the partial forces and moments (including those associated
+         !   with the QD2T()'s and those that are not) at the blade root (point S(0))
+         !   using the tip brake effects:
+   
+         RtHSdat%PFrcS0B(:,K,:) = 0.0 ! Initialize these partial
+         RtHSdat%PMomH0B(:,K,:) = 0.0 ! forces and moments to zero
+         DO I = 1,p%DOFs%NPSE(K)  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of blade K
+   
+            TmpVec1 = -p%TipMass(K)*RtHSdat%PLinVelES(K,p%TipNode,p%DOFs%PSE(K,I),0,:)                            ! The portion of PFrcS0B associated with the tip brake
+   
+            RtHSdat%PFrcS0B(:,K,p%DOFs%PSE(K,I)) = TmpVec1
+            RtHSdat%PMomH0B(:,K,p%DOFs%PSE(K,I)) = CROSS_PRODUCT( RtHSdat%rS0S(:,K,p%TipNode), TmpVec1 )          ! The portion of PMomH0B associated with the tip brake
+   
+         ENDDO             ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of blade K  
+      
+      
+         DO J = 1,p%BldNodes ! Loop through the blade nodes / elements
+   
+         ! Integrate to find the partial forces and moments (including those associated
+         !   with the QD2T()'s and those that are not) at the blade root (point S(0)):
+   
+            DO I = 1,p%DOFs%NPSE(K)  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of blade K
+   
+               TmpVec1 = -p%BElmntMass(J,K)*RtHSdat%PLinVelES(K,J,p%DOFs%PSE(K,I),0,:)   ! The portion of PFrcS0B associated with blade element J
+   
+               RtHSdat%PFrcS0B(:,K,p%DOFs%PSE(K,I)) = RtHSdat%PFrcS0B(:,K,p%DOFs%PSE(K,I)) + TmpVec1
+               RtHSdat%PMomH0B(:,K,p%DOFs%PSE(K,I)) = RtHSdat%PMomH0B(:,K,p%DOFs%PSE(K,I)) + &
+                                                       CROSS_PRODUCT( RtHSdat%rS0S(:,K,J), TmpVec1 )                   ! The portion of PMomH0B associated with blade element J
+   
+            ENDDO             ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of blade K
+         END DO
+         
+         
+      END DO     
+      
+    
+   !.....................................
+   ! FrcS0Bt and MomH0Bt
+   !.....................................
+      DO K = 1,p%NumBl ! Loop through all blades
+      
+         TmpVec1 = RtHSdat%FSTipDrag(:,K) - p%TipMass(K)*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccESt(:,K,p%TipNode) ) ! The portion of FrcS0Bt associated with the tip brake
+         RtHSdat%FrcS0Bt(:,K) = TmpVec1
+         RtHSdat%MomH0Bt(:,K) = CROSS_PRODUCT(  RtHSdat%rS0S(:,K,p%TipNode), TmpVec1 )                                 ! The portion of MomH0Bt associated with the tip brake
+   
+         DO J = 1,p%BldNodes ! Loop through the blade nodes / elements      
+         
+            TmpVec1 = RtHSdat%FSAero(:,K,J)*p%DRNodes(J) - p%BElmntMass(J,K)*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccESt(:,K,J) ) ! The portion of FrcS0Bt associated with blade element J
+            TmpVec2 = CROSS_PRODUCT( RtHSdat%rS0S(:,K,J), TmpVec1 )                                    ! The portion of MomH0Bt associated with blade element J
+            TmpVec3 = RtHSdat%MMAero(:,K,J)*p%DRNodes(J)                                               ! The total external moment applied to blade element J
+   
+            RtHSdat%FrcS0Bt(:,K) = RtHSdat%FrcS0Bt(:,K) + TmpVec1
+            RtHSdat%MomH0Bt(:,K) = RtHSdat%MomH0Bt(:,K) + TmpVec2 + TmpVec3
+         
+         END DO !J
+         
+      END DO !K   
+            
+         
+   !.....................................
+   ! PFrcPRot AND PMomLPRot:  
+   !   ( requires PFrcS0B and PMomH0B)
+   !.....................................
+         ! Initialize the partial forces and moments (including those associated
+         !   with the QD2T()'s and those that are not) at the teeter pin (point P) using the hub mass effects:    
+   
+      RtHSdat%PFrcPRot  = 0.0   ! Initialize these partial
+      RtHSdat%PMomLPRot = 0.0   ! forces and moments to zero
+      DO I = 1,p%DOFs%NPCE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the hub center of mass (point C)
+   
+         TmpVec1 = -p%HubMass*RtHSdat%PLinVelEC(p%DOFs%PCE(I),0,:)     ! The portion of PFrcPRot  associated with the HubMass
+         TmpVec2 = CROSS_PRODUCT( RtHSdat%rPC, TmpVec1 )      ! The portion of PMomLPRot associated with the HubMass
+   
+         RtHSdat%PFrcPRot (:,p%DOFs%PCE(I)) = TmpVec1
+         RtHSdat%PMomLPRot(:,p%DOFs%PCE(I)) = TmpVec2 - p%Hubg1Iner*CoordSys%g1*DOT_PRODUCT( CoordSys%g1, RtHSdat%PAngVelEH(p%DOFs%PCE(I),0,:) ) &
+                                                      - p%Hubg2Iner*CoordSys%g2*DOT_PRODUCT( CoordSys%g2, RtHSdat%PAngVelEH(p%DOFs%PCE(I),0,:) )
+   
+      ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the hub center of mass (point C)
+   
+      
+      DO K = 1,p%NumBl ! Loop through all blades
+      
+            ! Calculate the position vector from the teeter pin to the blade root:
+      
+         !rPS0(:,K) = RtHSdat%rPQ + p%HubRad*CoordSys%j3(K,:)   ! Position vector from teeter pin (point P) to blade root (point S(0)).
+               
+         ! Add the blade effects to the partial forces and moments (including those associated with the QD2T()'s and those that are 
+         !   not) at the teeter pin (point P):
+   
+         DO I = 1,p%DOFs%NPSE(K)  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of blade K
+   
+            TmpVec = CROSS_PRODUCT( RtHSdat%rPS0(:,K), RtHSdat%PFrcS0B(:,K,p%DOFs%PSE(K,I)) ) ! The portion of PMomLPRot associated with PFrcS0B.
+   
+            RtHSdat%PFrcPRot (:,p%DOFs%PSE(K,I)) = RtHSdat%PFrcPRot (:,p%DOFs%PSE(K,I)) + RtHSdat%PFrcS0B(:,K,p%DOFs%PSE(K,I))
+            RtHSdat%PMomLPRot(:,p%DOFs%PSE(K,I)) = RtHSdat%PMomLPRot(:,p%DOFs%PSE(K,I)) + RtHSdat%PMomH0B(:,K,p%DOFs%PSE(K,I))+TmpVec
+   
+         ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of blade K
+   
+   
+      END DO   ! K   
+   
+   !.....................................
+   ! FrcPRott and MomLPRott:
+   !   (requires FrcS0Bt and MomH0Bt)
+   !.....................................
+   
+      TmpVec1 = -p%HubMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccECt )                     ! The portion of FrcPRott  associated with the HubMass
+      TmpVec2 = CROSS_PRODUCT( RtHSdat%rPC, TmpVec1 )                                        ! The portion of MomLPRott associated with the HubMass
+      TmpVec  = p%Hubg1Iner*CoordSys%g1*DOT_PRODUCT( CoordSys%g1, RtHSdat%AngVelEH ) &       ! = ( Hub inertia dyadic ) dot ( angular velocity of hub in the inertia frame )
+              + p%Hubg2Iner*CoordSys%g2*DOT_PRODUCT( CoordSys%g2, RtHSdat%AngVelEH )
+      TmpVec3 = CROSS_PRODUCT( -RtHSdat%AngVelEH, TmpVec )                                   ! = ( -angular velocity of hub in the inertia frame ) cross ( TmpVec )
+   
+      RtHSdat%FrcPRott(1)  = TmpVec1(1) + u%HubPtLoad%Force(1,1)
+      RtHSdat%FrcPRott(2)  = TmpVec1(2) + u%HubPtLoad%Force(3,1)
+      RtHSdat%FrcPRott(3)  = TmpVec1(3) - u%HubPtLoad%Force(2,1)
+      
+      RtHSdat%MomLPRott    = TmpVec2 + TmpVec3 - p%Hubg1Iner*CoordSys%g1*DOT_PRODUCT( CoordSys%g1, RtHSdat%AngAccEHt ) &
+                                               - p%Hubg2Iner*CoordSys%g2*DOT_PRODUCT( CoordSys%g2, RtHSdat%AngAccEHt )                                          
+         
+      RtHSdat%MomLPRott(1) = RtHSdat%MomLPRott(1) + u%HubPtLoad%Moment(1,1)
+      RtHSdat%MomLPRott(2) = RtHSdat%MomLPRott(2) + u%HubPtLoad%Moment(3,1)
+      RtHSdat%MomLPRott(3) = RtHSdat%MomLPRott(3) - u%HubPtLoad%Moment(2,1)
+      
+      DO K = 1,p%NumBl ! Loop through all blades
+      
+            ! Calculate the position vector from the teeter pin to the blade root:
+      
+         !rPS0 = RtHSdat%rPQ + p%HubRad*m%CoordSys%j3(K,:)   ! Position vector from teeter pin (point P) to blade root (point S(0)).
+               
+         TmpVec = CROSS_PRODUCT( RtHSdat%rPS0(:,K), RtHSdat%FrcS0Bt(:,K) )       ! The portion of MomLPRott associated with FrcS0Bt.
+   
+         RtHSdat%FrcPRott  = RtHSdat%FrcPRott  + RtHSdat%FrcS0Bt(:,K)
+         RtHSdat%MomLPRott = RtHSdat%MomLPRott + RtHSdat%MomH0Bt(:,K) + TmpVec
+   
+      END DO   ! K
+   
+      
+      ! Define the partial forces and moments (including those associated with
+      !   the QD2T()'s and those that are not) at the specified point on the
+      !   rotor-furl axis (point V) / nacelle (body N) using the structure that
+      !   furls with the rotor, generator, and rotor effects.
+      
+   !.....................................
+   ! PMomNGnRt and PFrcVGnRt
+   !  (requires PMomLPRot and PFrcPRot)
+   !..................................... 
+      RtHSdat%PFrcVGnRt = RtHSdat%PFrcPRot    ! Initialize these partial forces and
+      RtHSdat%PMomNGnRt = RtHSdat%PMomLPRot   ! moments using the rotor effects
+      DO I = 1,p%DOFs%NActvDOF ! Loop through all active (enabled) DOFs
+   
+         TmpVec = CROSS_PRODUCT( RtHSdat%rVP, RtHSdat%PFrcPRot(:,p%DOFs%SrtPS(I)) )  ! The portion of PMomNGnRt associated with the PFrcPRot
+   
+         RtHSdat%PMomNGnRt(:,p%DOFs%SrtPS(I)) = RtHSdat%PMomNGnRt(:,p%DOFs%SrtPS(I)) + TmpVec
+   
+      ENDDO             ! I - All active (enabled) DOFs
+      DO I = 1,p%DOFs%NPDE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the center of mass of the structure that furls with the rotor (not including rotor) (point D)
+   
+         TmpVec1 = -p%RFrlMass*RtHSdat%PLinVelED(p%DOFs%PDE(I)  ,0,:)           ! The portion of PFrcVGnRt associated with the RFrlMass
+         TmpVec2 = CROSS_PRODUCT( RtHSdat%rVD,              TmpVec1 )  ! The portion of PMomNGnRt associated with the RFrlMass
+   
+         RtHSdat%PFrcVGnRt(:,p%DOFs%PDE(I)  ) = RtHSdat%PFrcVGnRt(:,p%DOFs%PDE(I)  ) + TmpVec1
+   
+         RtHSdat%PMomNGnRt(:,p%DOFs%PDE(I)  ) = RtHSdat%PMomNGnRt(:,p%DOFs%PDE(I)  ) + TmpVec2                                   &
+                                              - p%RrfaIner*CoordSys%rfa*DOT_PRODUCT( CoordSys%rfa, RtHSdat%PAngVelER(p%DOFs%PDE(I) ,0,:) ) &
+                                              - p%GenIner*CoordSys%c1 *DOT_PRODUCT(  CoordSys%c1 , RtHSdat%PAngVelEG(p%DOFs%PDE(I) ,0,:) )
+   
+      ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the center of mass of the structure that furls with the rotor (not including rotor) (point D)
+      IF ( p%DOF_Flag(DOF_GeAz) )  THEN
+   
+         RtHSdat%PMomNGnRt(:,DOF_GeAz) = RtHSdat%PMomNGnRt(:,DOF_GeAz)                                             &     ! The previous loop (DO I = 1,NPDE) misses the DOF_GeAz-contribution to: ( Generator inertia dyadic ) dot ( partial angular velocity of the generator in the inertia frame )
+                               -  p%GenIner*CoordSys%c1 *DOT_PRODUCT( CoordSys%c1, RtHSdat%PAngVelEG(DOF_GeAz,0,:) )     ! Thus, add this contribution if necessary.
+   
+      ENDIF   
+      
+   !.....................................
+   ! FrcVGnRtt and MomNGnRtt
+   !  (requires FrcPRott and MomLPRott)
+   !.....................................
+      TmpVec1 = -p%RFrlMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccEDt )                ! The portion of FrcVGnRtt associated with the RFrlMass
+      TmpVec2 = CROSS_PRODUCT( RtHSdat%rVD      ,  TmpVec1 )                             ! The portion of MomNGnRtt associated with the RFrlMass
+      TmpVec3 = CROSS_PRODUCT( RtHSdat%rVP      , RtHSdat%FrcPRott )                     ! The portion of MomNGnRtt associated with the FrcPRott
+      TmpVec  = p%RrfaIner*CoordSys%rfa*DOT_PRODUCT( CoordSys%rfa, RtHSdat%AngVelER )    ! = ( R inertia dyadic ) dot ( angular velocity of structure that furls with the rotor in the inertia frame )
+      TmpVec4 = CROSS_PRODUCT( -RtHSdat%AngVelER, TmpVec )                               ! = ( -angular velocity of structure that furls with the rotor in the inertia frame ) cross ( TmpVec )
+      TmpVec  =  p%GenIner*CoordSys%c1* DOT_PRODUCT( CoordSys%c1 , RtHSdat%AngVelEG )    ! = ( Generator inertia dyadic ) dot ( angular velocity of generator in the inertia frame )
+      TmpVec5 = CROSS_PRODUCT( -RtHSdat%AngVelEG, TmpVec )                               ! = ( -angular velocity of generator in the inertia frame ) cross ( TmpVec )
+   
+      RtHSdat%FrcVGnRtt = RtHSdat%FrcPRott  + TmpVec1
+      RtHSdat%MomNGnRtt = RtHSdat%MomLPRott + TmpVec2 + TmpVec3 + TmpVec4 + TmpVec5            &
+                        - p%RrfaIner*CoordSys%rfa*DOT_PRODUCT( CoordSys%rfa, RtHSdat%AngAccERt ) &
+                        -  p%GenIner*CoordSys%c1 *DOT_PRODUCT( CoordSys%c1 , RtHSdat%AngAccEGt )
+   
+   
+   !.....................................
+   ! PFrcWTail and PMomNTail
+   !.....................................
+         ! Define the partial forces and moments (including those associated with the QD2T()'s and 
+         !   those that are not) at the specified point on the tail-furl axis (point W) / nacelle (body N) using the tail effects.
+   
+      RtHSdat%PFrcWTail = 0.0   ! Initialize these partial
+      RtHSdat%PMomNTail = 0.0   ! forces and moments to zero
+      DO I = 1,p%DOFs%NPIE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tail boom center of mass (point I)
+   
+         TmpVec1 = -p%BoomMass*RtHSdat%PLinVelEI(p%DOFs%PIE(I),0,:)    ! The portion of PFrcWTail associated with the BoomMass
+         TmpVec2 = -p%TFinMass*RtHSdat%PLinVelEJ(p%DOFs%PIE(I),0,:)    ! The portion of PFrcWTail associated with the TFinMass
+         TmpVec3 = CROSS_PRODUCT( RtHSdat%rWI, TmpVec1 )                      ! The portion of PMomNTail associated with the BoomMass
+         TmpVec4 = CROSS_PRODUCT( RtHSdat%rWJ, TmpVec2 )                      ! The portion of PMomNTail associated with the TFinMass
+   
+         RtHSdat%PFrcWTail(:,p%DOFs%PIE(I)) = TmpVec1 + TmpVec2
+         RtHSdat%PMomNTail(:,p%DOFs%PIE(I)) = TmpVec3 + TmpVec4 - p%AtfaIner*CoordSys%tfa* &
+                                                                DOT_PRODUCT( CoordSys%tfa, RtHSdat%PAngVelEA(p%DOFs%PIE(I),0,:) )
+   
+      ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tail boom center of mass (point I)
+   
+   !.....................................
+   ! FrcWTailt and MomNTailt
+   !  (requires FKAero and MAAero)
+   !.....................................
+   
+      TmpVec1 = -p%BoomMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccEIt )                 ! The portion of FrcWTailt associated with the BoomMass
+      TmpVec2 = -p%TFinMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccEJt )                 ! The portion of FrcWTailt associated with the TFinMass
+      TmpVec3 = CROSS_PRODUCT( RtHSdat%rWI      , TmpVec1 )                           ! The portion of MomNTailt associated with the BoomMass
+      TmpVec4 = CROSS_PRODUCT( RtHSdat%rWJ      , TmpVec2 )                           ! The portion of MomNTailt associated with the TFinMass
+      TmpVec  = p%AtfaIner*CoordSys%tfa*DOT_PRODUCT( CoordSys%tfa, RtHSdat%AngVelEA )   ! = ( A inertia dyadic ) dot ( angular velocity of the tail in the inertia frame )
+      TmpVec5 = CROSS_PRODUCT( -RtHSdat%AngVelEA, TmpVec  )                           ! = ( -angular velocity of the tail in the inertia frame ) cross ( TmpVec )
+   
+      RtHSdat%FrcWTailt = FKAero + TmpVec1 + TmpVec2
+      RtHSdat%MomNTailt = MAAero + TmpVec3 + TmpVec4 + TmpVec5         &
+                        + CROSS_PRODUCT( RtHSdat%rWK      , FKAero  )  &                         ! The portion of MomNTailt associated with FKAero
+                        - p%AtfaIner*CoordSys%tfa*DOT_PRODUCT( CoordSys%tfa, RtHSdat%AngAccEAt )   
+      
+   !.....................................
+   ! PFrcONcRt and PMomBNcRt
+   !  (requires PFrcVGnRt, PMomNGnRt, PFrcWTail, PMomNTail, )
+   !.....................................
+   
+      ! Define the partial forces and moments (including those associated with
+      !   the QD2T()'s and those that are not) at the yaw bearing (point O) /
+      !   base plate (body B) using the nacelle, generator, rotor, and tail effects.
+   
+      RtHSdat%PFrcONcRt = RtHSdat%PFrcVGnRt + RtHSdat%PFrcWTail   ! Initialize these partial forces and moments using
+      RtHSdat%PMomBNcRt = RtHSdat%PMomNGnRt + RtHSdat%PMomNTail   ! the rotor, rotor-furl, generator, and tail effects
+      DO I = 1,p%DOFs%NActvDOF ! Loop through all active (enabled) DOFs
+   
+         TmpVec = CROSS_PRODUCT( RtHSdat%rOV, RtHSdat%PFrcVGnRt(:,p%DOFs%SrtPS(I)) ) ! The portion of PMomBNcRt associated with the PFrcVGnRt
+   
+         RtHSdat%PMomBNcRt(:,p%DOFs%SrtPS(I)) = RtHSdat%PMomBNcRt(:,p%DOFs%SrtPS(I)) + TmpVec
+   
+      ENDDO             ! I - All active (enabled) DOFs
+      DO I = 1,p%DOFs%NPIE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tail boom center of mass (point I)
+   
+         TmpVec = CROSS_PRODUCT( RtHSdat%rOW, RtHSdat%PFrcWTail(:,p%DOFs%PIE(I)  ) ) ! The portion of PMomBNcRt associated with the PFrcWTail
+   
+         RtHSdat%PMomBNcRt(:,p%DOFs%PIE(I) ) = RtHSdat%PMomBNcRt(:,p%DOFs%PIE(I) ) + TmpVec
+   
+      ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tail boom center of mass (point I)
+      DO I = 1,p%DOFs%NPUE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the nacelle center of mass (point U)
+   
+         TmpVec1 = -p%NacMass*RtHSdat%PLinVelEU(p%DOFs%PUE(I),0,:)              ! The portion of PFrcONcRt associated with the NacMass
+         TmpVec2 = CROSS_PRODUCT( RtHSdat%rOU,               TmpVec1 ) ! The portion of PMomBNcRt associated with the NacMass
+   
+         RtHSdat%PFrcONcRt(:,p%DOFs%PUE(I)  ) = RtHSdat%PFrcONcRt(:,p%DOFs%PUE(I) ) + TmpVec1
+         RtHSdat%PMomBNcRt(:,p%DOFs%PUE(I)  ) = RtHSdat%PMomBNcRt(:,p%DOFs%PUE(I) ) + TmpVec2 - p%Nacd2Iner*CoordSys%d2* &
+                                                DOT_PRODUCT( CoordSys%d2, RtHSdat%PAngVelEN(p%DOFs%PUE(I),0,:) )
+   
+      ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the nacelle center of mass (point U)
+   
+   
+   !.....................................
+   ! FrcONcRtt and MomBNcRtt
+   !  (requires FrcVGnRtt, MomNGnRtt, FrcWTailt, MomNTailt)
+   !.....................................
+   
+      TmpVec1 = -p%NacMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccEUt )                ! The portion of FrcONcRtt associated with the NacMass
+      TmpVec2 = CROSS_PRODUCT( RtHSdat%rOU,           TmpVec1 )                         ! The portion of MomBNcRtt associated with the NacMass
+      TmpVec3 = CROSS_PRODUCT( RtHSdat%rOV, RtHSdat%FrcVGnRtt )                         ! The portion of MomBNcRtt associated with the FrcVGnRtt
+      TmpVec4 = CROSS_PRODUCT( RtHSdat%rOW, RtHSdat%FrcWTailt )                         ! The portion of MomBNcRtt associated with the FrcWTailt
+      TmpVec  = p%Nacd2Iner*CoordSys%d2*DOT_PRODUCT( CoordSys%d2, RtHSdat%AngVelEN )    ! = ( Nacelle inertia dyadic ) dot ( angular velocity of nacelle in the inertia frame )
+       
+      RtHSdat%FrcONcRtt = RtHSdat%FrcVGnRtt + RtHSdat%FrcWTailt + TmpVec1 + (/ u%NacelleLoads%Force(1,1), u%NacelleLoads%Force(3,1), -u%NacelleLoads%Force(2,1) /)
+      
+      RtHSdat%MomBNcRtt = RtHSdat%MomNGnRtt + RtHSdat%MomNTailt + TmpVec2 + TmpVec3 + TmpVec4  &
+                           + CROSS_PRODUCT( -RtHSdat%AngVelEN, TmpVec    )                     &    ! = ( -angular velocity of nacelle in the inertia frame ) cross ( TmpVec ) &
+                           - p%Nacd2Iner*CoordSys%d2*DOT_PRODUCT( CoordSys%d2, RtHSdat%AngAccENt ) &
+                           + (/ u%NacelleLoads%Moment(1,1), u%NacelleLoads%Moment(3,1), -u%NacelleLoads%Moment(2,1) /)
+   
+   !.....................................
+   ! PFTHydro and PMFHydro   
+   !  (requires TwrAddedMass)   
+   !.....................................
+   
+      ! Compute the partial hydrodynamic forces and moments per unit length
+      !   (including those associated with the QD2T()'s and those that are not) at the current tower element (point T) / (body F):
+   
+      ! NOTE: These forces are named PFTHydro, PMFHydro, FTHydrot, and MFHydrot. However, the names should not imply that the 
+      !       forces are a result of hydrodynamic contributions only.  These tower forces contain contributions from any external 
+      !       load acting on the tower other than loads transmitted from aerodynamics.  For example, these tower forces contain 
+      !       contributions from foundation stiffness and damping [not floating] or mooring line restoring and damping,
+      !       as well as hydrostatic and hydrodynamic contributions [offshore].
+   
+      DO J=1,p%TwrNodes
+      
+         RtHSdat%PFTHydro(:,J,:) = 0.0
+         RtHSdat%PMFHydro(:,J,:) = 0.0
+         DO I = 1,p%DOFs%NPTE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tower
+   
+            RtHSdat%PFTHydro(:,J,p%DOFs%PTE(I)) = &
+                                   CoordSys%z1*( - u%TwrAddedMass(DOF_Sg,DOF_Sg,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,1) &
+                                                 + u%TwrAddedMass(DOF_Sg,DOF_Sw,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,3) &
+                                                 - u%TwrAddedMass(DOF_Sg,DOF_Hv,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,2) &
+                                                 - u%TwrAddedMass(DOF_Sg,DOF_R ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,1) &
+                                                 + u%TwrAddedMass(DOF_Sg,DOF_P ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,3) &
+                                                 - u%TwrAddedMass(DOF_Sg,DOF_Y ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,2)   ) &
+                                 - CoordSys%z3*( - u%TwrAddedMass(DOF_Sw,DOF_Sg,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,1) &
+                                                 + u%TwrAddedMass(DOF_Sw,DOF_Sw,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,3) &
+                                                 - u%TwrAddedMass(DOF_Sw,DOF_Hv,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,2) &
+                                                 - u%TwrAddedMass(DOF_Sw,DOF_R ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,1) &
+                                                 + u%TwrAddedMass(DOF_Sw,DOF_P ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,3) &
+                                                 - u%TwrAddedMass(DOF_Sw,DOF_Y ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,2)   ) &
+                                 + CoordSys%z2*( - u%TwrAddedMass(DOF_Hv,DOF_Sg,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,1) &
+                                                 + u%TwrAddedMass(DOF_Hv,DOF_Sw,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,3) &
+                                                 - u%TwrAddedMass(DOF_Hv,DOF_Hv,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,2) &
+                                                 - u%TwrAddedMass(DOF_Hv,DOF_R ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,1) &
+                                                 + u%TwrAddedMass(DOF_Hv,DOF_P ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,3) &
+                                                 - u%TwrAddedMass(DOF_Hv,DOF_Y ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,2)   )
+            RtHSdat%PMFHydro(:,J,p%DOFs%PTE(I)) = &
+                                   CoordSys%z1*( - u%TwrAddedMass(DOF_R ,DOF_Sg,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,1) &
+                                                 + u%TwrAddedMass(DOF_R ,DOF_Sw,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,3) &
+                                                 - u%TwrAddedMass(DOF_R ,DOF_Hv,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,2) &
+                                                 - u%TwrAddedMass(DOF_R ,DOF_R ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,1) &
+                                                 + u%TwrAddedMass(DOF_R ,DOF_P ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,3) &
+                                                 - u%TwrAddedMass(DOF_R ,DOF_Y ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,2)   ) &
+                                 - CoordSys%z3*( - u%TwrAddedMass(DOF_P ,DOF_Sg,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,1) &
+                                                 + u%TwrAddedMass(DOF_P ,DOF_Sw,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,3) &
+                                                 - u%TwrAddedMass(DOF_P ,DOF_Hv,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,2) &
+                                                 - u%TwrAddedMass(DOF_P ,DOF_R ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,1) &
+                                                 + u%TwrAddedMass(DOF_P ,DOF_P ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,3) &
+                                                 - u%TwrAddedMass(DOF_P ,DOF_Y ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,2)   ) &
+                                 + CoordSys%z2*( - u%TwrAddedMass(DOF_Y ,DOF_Sg,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,1) &
+                                                 + u%TwrAddedMass(DOF_Y ,DOF_Sw,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,3) &
+                                                 - u%TwrAddedMass(DOF_Y ,DOF_Hv,J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,2) &
+                                                 - u%TwrAddedMass(DOF_Y ,DOF_R ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,1) &
+                                                 + u%TwrAddedMass(DOF_Y ,DOF_P ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,3) &
+                                                 - u%TwrAddedMass(DOF_Y ,DOF_Y ,J)*RtHSdat%PAngVelEF(J,p%DOFs%PTE(I),0,2)   )
+   
+         END DO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tower
+      END DO !J
+   
+   !.....................................
+   ! FTHydrot and MFHydrot   
+   !  (requires TwrAddedMass)   
+   !.....................................
+      
+      DO J=1,p%TwrNodes
+         RtHSdat%FTHydrot(:,J) = CoordSys%z1*( u%TowerPtLoads%Force(DOF_Sg,J)/p%DHNodes(J) &
+                                                     - u%TwrAddedMass(DOF_Sg,DOF_Sg,J)*RtHSdat%LinAccETt(1,J) &
+                                                     + u%TwrAddedMass(DOF_Sg,DOF_Sw,J)*RtHSdat%LinAccETt(3,J) &
+                                                     - u%TwrAddedMass(DOF_Sg,DOF_Hv,J)*RtHSdat%LinAccETt(2,J) &
+                                                     - u%TwrAddedMass(DOF_Sg,DOF_R ,J)*RtHSdat%AngAccEFt(1,J) &
+                                                     + u%TwrAddedMass(DOF_Sg,DOF_P ,J)*RtHSdat%AngAccEFt(3,J) &
+                                                     - u%TwrAddedMass(DOF_Sg,DOF_Y ,J)*RtHSdat%AngAccEFt(2,J)   ) &
+                               - CoordSys%z3*( u%TowerPtLoads%Force(DOF_Sw,J)/p%DHNodes(J) &
+                                                     - u%TwrAddedMass(DOF_Sw,DOF_Sg,J)*RtHSdat%LinAccETt(1,J) &
+                                                     + u%TwrAddedMass(DOF_Sw,DOF_Sw,J)*RtHSdat%LinAccETt(3,J) &
+                                                     - u%TwrAddedMass(DOF_Sw,DOF_Hv,J)*RtHSdat%LinAccETt(2,J) &
+                                                     - u%TwrAddedMass(DOF_Sw,DOF_R ,J)*RtHSdat%AngAccEFt(1,J) &
+                                                     + u%TwrAddedMass(DOF_Sw,DOF_P ,J)*RtHSdat%AngAccEFt(3,J) &
+                                                     - u%TwrAddedMass(DOF_Sw,DOF_Y ,J)*RtHSdat%AngAccEFt(2,J)   ) &
+                                + CoordSys%z2*( u%TowerPtLoads%Force(DOF_Hv,J)/p%DHNodes(J) &
+                                                     - u%TwrAddedMass(DOF_Hv,DOF_Sg,J)*RtHSdat%LinAccETt(1,J) &
+                                                     + u%TwrAddedMass(DOF_Hv,DOF_Sw,J)*RtHSdat%LinAccETt(3,J) &
+                                                     - u%TwrAddedMass(DOF_Hv,DOF_Hv,J)*RtHSdat%LinAccETt(2,J) &
+                                                     - u%TwrAddedMass(DOF_Hv,DOF_R ,J)*RtHSdat%AngAccEFt(1,J) &
+                                                     + u%TwrAddedMass(DOF_Hv,DOF_P ,J)*RtHSdat%AngAccEFt(3,J) &
+                                                     - u%TwrAddedMass(DOF_Hv,DOF_Y ,J)*RtHSdat%AngAccEFt(2,J)   )
+         RtHSdat%MFHydrot(:,J) = CoordSys%z1*( u%TowerPtLoads%Moment(DOF_R-3,J)/p%DHNodes(J) &
+                                                     - u%TwrAddedMass(DOF_R ,DOF_Sg,J)*RtHSdat%LinAccETt(1,J) &
+                                                     + u%TwrAddedMass(DOF_R ,DOF_Sw,J)*RtHSdat%LinAccETt(3,J) &
+                                                     - u%TwrAddedMass(DOF_R ,DOF_Hv,J)*RtHSdat%LinAccETt(2,J) &
+                                                     - u%TwrAddedMass(DOF_R ,DOF_R ,J)*RtHSdat%AngAccEFt(1,J) &
+                                                     + u%TwrAddedMass(DOF_R ,DOF_P ,J)*RtHSdat%AngAccEFt(3,J) &
+                                                     - u%TwrAddedMass(DOF_R ,DOF_Y ,J)*RtHSdat%AngAccEFt(2,J)   ) &
+                               - CoordSys%z3*( u%TowerPtLoads%Moment(DOF_P-3 ,J)/p%DHNodes(J) &
+                                                     - u%TwrAddedMass(DOF_P ,DOF_Sg,J)*RtHSdat%LinAccETt(1,J) &
+                                                     + u%TwrAddedMass(DOF_P ,DOF_Sw,J)*RtHSdat%LinAccETt(3,J) &
+                                                     - u%TwrAddedMass(DOF_P ,DOF_Hv,J)*RtHSdat%LinAccETt(2,J) &
+                                                     - u%TwrAddedMass(DOF_P ,DOF_R ,J)*RtHSdat%AngAccEFt(1,J) &
+                                                     + u%TwrAddedMass(DOF_P ,DOF_P ,J)*RtHSdat%AngAccEFt(3,J) &
+                                                     - u%TwrAddedMass(DOF_P ,DOF_Y ,J)*RtHSdat%AngAccEFt(2,J)   ) &
+                               + CoordSys%z2*( u%TowerPtLoads%Moment(DOF_Y-3 ,J)/p%DHNodes(J) &
+                                                     - u%TwrAddedMass(DOF_Y ,DOF_Sg,J)*RtHSdat%LinAccETt(1,J) &
+                                                     + u%TwrAddedMass(DOF_Y ,DOF_Sw,J)*RtHSdat%LinAccETt(3,J) &
+                                                     - u%TwrAddedMass(DOF_Y ,DOF_Hv,J)*RtHSdat%LinAccETt(2,J) &
+                                                     - u%TwrAddedMass(DOF_Y ,DOF_R ,J)*RtHSdat%AngAccEFt(1,J) &
+                                                     + u%TwrAddedMass(DOF_Y ,DOF_P ,J)*RtHSdat%AngAccEFt(3,J) &
+                                                     - u%TwrAddedMass(DOF_Y ,DOF_Y ,J)*RtHSdat%AngAccEFt(2,J)   )
+   
+      END DO !J
+      
+   !.....................................
+   ! PFrcT0Trb and PMomX0Trb
+   !  (requires PFrcONcRt, PMomBNcRt, PFrcT0Trb, PMomX0Trb, PFTHydro, PMFHydro)
+   !.....................................
+   
+         ! Initialize the partial forces and moments (including those associated
+         !   with the QD2T()'s and those that are not) at the tower base (point T(0))  using everything but the tower:
+   
+      RtHSdat%PFrcT0Trb = RtHSdat%PFrcONcRt   ! Initialize these partial forces and moments
+      RtHSdat%PMomX0Trb = RtHSdat%PMomBNcRt   ! using all of the effects above the yaw bearing
+      DO I = 1,p%DOFs%NActvDOF ! Loop through all active (enabled) DOFs
+   
+         TmpVec  = CROSS_PRODUCT(  RtHSdat%rT0O, RtHSdat%PFrcONcRt(:,p%DOFs%SrtPS(I)) )   ! The portion of PMomX0Trb associated with the PFrcONcRt
+   
+         RtHSdat%PMomX0Trb(:,p%DOFs%SrtPS(I)) = RtHSdat%PMomX0Trb(:,p%DOFs%SrtPS(I)) + TmpVec
+   
+      ENDDO             ! I - All active (enabled) DOFs
+      DO I = 1,p%DOFs%NPTE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the yaw bearing center of mass (point O)
+   
+         TmpVec1 = -p%YawBrMass*RtHSdat%PLinVelEO(p%DOFs%PTE(I),0,:)               ! The portion of PFrcT0Trb associated with the YawBrMass
+         TmpVec2 = CROSS_PRODUCT( RtHSdat%rT0O,               TmpVec1 )   ! The portion of PMomX0Trb associated with the YawBrMass
+   
+         RtHSdat%PFrcT0Trb(:,p%DOFs%PTE(I)  ) = RtHSdat%PFrcT0Trb(:,p%DOFs%PTE(I)  ) + TmpVec1
+         RtHSdat%PMomX0Trb(:,p%DOFs%PTE(I)  ) = RtHSdat%PMomX0Trb(:,p%DOFs%PTE(I)  ) + TmpVec2
+   
+      ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the yaw bearing center of mass (point O)
+   
+      TmpVec1 = -p%YawBrMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccEOt ) ! The portion of FrcT0Trbt associated with the YawBrMass
+      TmpVec2 = CROSS_PRODUCT( RtHSdat%rT0O,   TmpVec1 )               ! The portion of MomX0Trbt associated with the YawBrMass
+      TmpVec3 = CROSS_PRODUCT( RtHSdat%rT0O, RtHSdat%FrcONcRtt )               ! The portion of MomX0Trbt associated with the FrcONcRtt
+   
+      RtHSdat%FrcT0Trbt = RtHSdat%FrcONcRtt + TmpVec1
+      RtHSdat%MomX0Trbt = RtHSdat%MomBNcRtt + TmpVec2 + TmpVec3   
+      
+      ! Integrate to find the total partial forces and moments (including those
+      !   associated with the QD2T()'s and those that are not) at the tower base (point T(0)):
+      DO J=1,p%TwrNodes
+   
+         DO I = 1,p%DOFs%NPTE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tower
+   
+            TmpVec1 = RtHSdat%PFTHydro(:,J,p%DOFs%PTE(I))*p%DHNodes(J) - p%TElmntMass(J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,:)           ! The portion of PFrcT0Trb associated with tower element J
+            TmpVec2 = CROSS_PRODUCT( RtHSdat%rT0T(:,J), TmpVec1 )                 ! The portion of PMomX0Trb associated with tower element J
+            TmpVec3 = RtHSdat%PMFHydro(:,J,p%DOFs%PTE(I))*p%DHNodes(J)             ! The added moment applied at tower element J
+   
+            RtHSdat%PFrcT0Trb(:,p%DOFs%PTE(I)) = RtHSdat%PFrcT0Trb(:,p%DOFs%PTE(I)) + TmpVec1
+            RtHSdat%PMomX0Trb(:,p%DOFs%PTE(I)) = RtHSdat%PMomX0Trb(:,p%DOFs%PTE(I)) + TmpVec2 + TmpVec3
+   
+         ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tower
+   
+         TmpVec1 = ( RtHSdat%FTHydrot(:,J) )*p%DHNodes(J) &
+                 - p%TElmntMass(J)*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccETt(:,J) )          ! The portion of FrcT0Trbt associated with tower element J
+         TmpVec2 = CROSS_PRODUCT( RtHSdat%rT0T(:,J), TmpVec1 )                                 ! The portion of MomX0Trbt associated with tower element J
+         TmpVec3 = ( RtHSdat%MFHydrot(:,J) )*p%DHNodes(J)                                      ! The external moment applied to tower element J
+   
+         RtHSdat%FrcT0Trbt = RtHSdat%FrcT0Trbt + TmpVec1
+   
+         RtHSdat%MomX0Trbt = RtHSdat%MomX0Trbt + TmpVec2 + TmpVec3
+   
+      END DO !J
+   
+   !.....................................
+   ! PFZHydro and  PMXHydro  
+   !  ( requires PtfmAddedMass )
+   !.....................................   
+      
+      !..................................................................................................................................
+      ! Compute the partial platform forces and moments (including those associated with the QD2T()'s and those that are not) at the
+      ! platform reference (point Z) / (body X).
+      !
+      ! NOTE: These forces are named PFZHydro, PMXHydro, FZHydrot, and MXHydrot. However, the names should not imply that the forces
+      !   are a result of hydrodynamic contributions only. These platform forces contain contributions from any external load acting
+      !   on the platform other than loads transmitted from the wind turbine. For example, these platform forces contain contributions
+      !   from foundation stiffness and damping [not floating] or mooring line restoring and damping [floating], as well as hydrostatic
+      !   and hydrodynamic contributions [offshore].
+      !bjj: m%RtHS%PFZHydro, %PMXHydro, %FZHydrot, and %MXHydrot are not used in the output routine anymore
+      !      (because of their dependence on inputs, u)
+   
+      RtHSdat%PFZHydro = 0.0
+      RtHSdat%PMXHydro = 0.0
+      DO I = 1,p%DOFs%NPYE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the platform center of mass (point Y)
+   
+         RtHSdat%PFZHydro(p%DOFs%PYE(I),:) = - u%PtfmAddedMass(DOF_Sg,p%DOFs%PYE(I))*RtHSdat%PLinVelEZ(DOF_Sg,0,:) &
+                                             - u%PtfmAddedMass(DOF_Sw,p%DOFs%PYE(I))*RtHSdat%PLinVelEZ(DOF_Sw,0,:) &
+                                             - u%PtfmAddedMass(DOF_Hv,p%DOFs%PYE(I))*RtHSdat%PLinVelEZ(DOF_Hv,0,:)
+         RtHSdat%PMXHydro(p%DOFs%PYE(I),:) = - u%PtfmAddedMass(DOF_R ,p%DOFs%PYE(I))*RtHSdat%PAngVelEX(DOF_R ,0,:) &
+                                             - u%PtfmAddedMass(DOF_P ,p%DOFs%PYE(I))*RtHSdat%PAngVelEX(DOF_P ,0,:) &
+                                             - u%PtfmAddedMass(DOF_Y ,p%DOFs%PYE(I))*RtHSdat%PAngVelEX(DOF_Y ,0,:)
+   
+      ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the platform center of mass (point Y)
+   
+      RtHSdat%FZHydrot = u%PlatformPtMesh%Force(DOF_Sg,1)*RtHSdat%PLinVelEZ(DOF_Sg,0,:) &
+                       + u%PlatformPtMesh%Force(DOF_Sw,1)*RtHSdat%PLinVelEZ(DOF_Sw,0,:) &
+                       + u%PlatformPtMesh%Force(DOF_Hv,1)*RtHSdat%PLinVelEZ(DOF_Hv,0,:)
+      RtHSdat%MXHydrot = u%PlatformPtMesh%Moment(DOF_R-3,1)*RtHSdat%PAngVelEX(DOF_R ,0,:) &
+                       + u%PlatformPtMesh%Moment(DOF_P-3,1)*RtHSdat%PAngVelEX(DOF_P ,0,:) &
+                       + u%PlatformPtMesh%Moment(DOF_Y-3,1)*RtHSdat%PAngVelEX(DOF_Y ,0,:)
+      
+   !.....................................
+   ! PFrcZAll and PMomXAll  
+   !  (requires PFrcT0Trb, PMomX0Trb, PFZHydro, PMXHydro )
+   !.....................................   
+   
+      ! Define the partial forces and moments (including those associated with the QD2T()'s and those that are not) at the
+      !   platform reference (point Z) / (body X) using the turbine and platform effects:
+   
+      RtHSdat%PFrcZAll = RtHSdat%PFrcT0Trb ! Initialize these partial forces and moments
+      RtHSdat%PMomXAll = RtHSdat%PMomX0Trb ! using the effects from the wind turbine
+      DO I = 1,p%DOFs%NActvDOF ! Loop through all active (enabled) DOFs
+   
+         TmpVec = CROSS_PRODUCT( RtHSdat%rZT0, RtHSdat%PFrcT0Trb(:,p%DOFs%SrtPS(I)) )   ! The portion of PMomXAll associated with the PFrcT0Trb
+   
+         RtHSdat%PMomXAll(:,p%DOFs%SrtPS(I)) = RtHSdat%PMomXAll(:,p%DOFs%SrtPS(I)) + TmpVec
+   
+      ENDDO             ! I - All active (enabled) DOFs
+      DO I = 1,p%DOFs%NPYE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the platform center of mass (point Y)
+   
+         TmpVec1 = -p%PtfmMass*RtHSdat%PLinVelEY(p%DOFs%PYE(I),0,:)                ! The portion of PFrcZAll associated with the PtfmMass
+         TmpVec2 = CROSS_PRODUCT( RtHSdat%rZY ,               TmpVec1 )   ! The portion of PMomXAll associated with the PtfmMass
+   
+         RtHSdat%PFrcZAll(:,p%DOFs%PYE(I)) = RtHSdat%PFrcZAll(:,p%DOFs%PYE(I)  )        + RtHSdat%PFZHydro(p%DOFs%PYE(I),:) + TmpVec1
+         RtHSdat%PMomXAll(:,p%DOFs%PYE(I)) = RtHSdat%PMomXAll(:,p%DOFs%PYE(I)  )        + RtHSdat%PMXHydro(p%DOFs%PYE(I),:) + TmpVec2 &
+                                       - p%PtfmRIner*CoordSys%a1*DOT_PRODUCT( CoordSys%a1, RtHSdat%PAngVelEX(p%DOFs%PYE(I),0,:) )   &
+                                       - p%PtfmYIner*CoordSys%a2*DOT_PRODUCT( CoordSys%a2, RtHSdat%PAngVelEX(p%DOFs%PYE(I),0,:) )   &
+                                       - p%PtfmPIner*CoordSys%a3*DOT_PRODUCT( CoordSys%a3, RtHSdat%PAngVelEX(p%DOFs%PYE(I),0,:) )
+   
+      ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the platform center of mass (point Y)
+   
+   !.....................................
+   ! FrcZAllt and MomXAllt
+   !  (requires FrcT0Trbt, MomX0Trbt)
+   !.....................................
+   
+      TmpVec1 = -p%PtfmMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccEYt  )                                              ! The portion of FrcZAllt associated with the PtfmMass
+      TmpVec2 = CROSS_PRODUCT( RtHSdat%rZY      ,   TmpVec1 )                                                                      ! The portion of MomXAllt associated with the PtfmMass
+      TmpVec3 = CROSS_PRODUCT( RtHSdat%rZT0     , RtHSdat%FrcT0Trbt )                                                      ! The portion of MomXAllt associated with the FrcT0Trbt
+      TmpVec  = p%PtfmRIner*CoordSys%a1*DOT_PRODUCT( CoordSys%a1, RtHSdat%AngVelEX  ) &      ! = ( Platform inertia dyadic ) dot ( angular velocity of platform in the inertia frame )
+              + p%PtfmYIner*CoordSys%a2*DOT_PRODUCT( CoordSys%a2, RtHSdat%AngVelEX  ) &
+              + p%PtfmPIner*CoordSys%a3*DOT_PRODUCT( CoordSys%a3, RtHSdat%AngVelEX  )
+      TmpVec4 = CROSS_PRODUCT( -RtHSdat%AngVelEX,   TmpVec  )                                                      ! = ( -angular velocity of platform in the inertia frame ) cross ( TmpVec )
+   
+      RtHSdat%FrcZAllt = RtHSdat%FrcT0Trbt + RtHSdat%FZHydrot + TmpVec1
+      RtHSdat%MomXAllt = RtHSdat%MomX0Trbt + RtHSdat%MXHydrot + TmpVec2 + TmpVec3 + TmpVec4   
+      
+      
+   END SUBROUTINE CalculateForcesMoments
+!----------------------------------------------------------------------------------------------------------------------------------
+!> This routine is used to calculate the forces and moments stored in other states that are used in
+!! both the CalcOutput and CalcContStateDeriv routines.
+   SUBROUTINE CalculateForcesMoments2( p, x, CoordSys, u, RtHSdat )
+      !..................................................................................................................................
+      
+            ! Passed variables
+         TYPE(ED_ParameterType),       INTENT(IN   )  :: p           !< Parameters
+         TYPE(ED_ContinuousStateType), INTENT(IN   )  :: x           !< Continuous states at Time
+         TYPE(ED_CoordSys),            INTENT(IN   )  :: CoordSys    !< The coordinate systems that have been set for these states/time
+         TYPE(ED_InputType),           INTENT(IN   )  :: u           !< The aero (blade) & nacelle forces/moments
+         TYPE(ED_RtHndSide),           INTENT(INOUT)  :: RtHSdat     !< data from the RtHndSid module (contains positions to be set)
+      
+            ! Local variables
+         REAL(ReKi)                   :: TmpVec    (3)                                   ! A temporary vector used in various computations.
+         REAL(ReKi)                   :: TmpVec1   (3)                                   ! A temporary vector used in various computations.
+         REAL(ReKi)                   :: TmpVec2   (3)                                   ! A temporary vector used in various computations.
+         REAL(ReKi)                   :: TmpVec3   (3)                                   ! A temporary vector used in various computations.
+         REAL(ReKi)                   :: TmpVec4   (3)                                   ! A temporary vector used in various computations.
+         REAL(ReKi)                   :: TmpVec5   (3)                                   ! A temporary vector used in various computations.
+            
+      !REAL(ReKi)                   :: rSAerCen  (3)                                   ! Position vector from a blade analysis node (point S) on the current blade to the aerodynamic center associated with the element.
+         REAL(ReKi), PARAMETER        :: FKAero   (3) = 0.0                              ! The tail fin aerodynamic force acting at point K, the center-of-pressure of the tail fin. (bjj: should be an input)
+         REAL(ReKi), PARAMETER        :: MAAero   (3) = 0.0                              ! The tail fin aerodynamic moment acting at point K, the center-of-pressure of the tail fin. (bjj: should be an input)   
+         
+         
+         INTEGER(IntKi)               :: I                                               ! Loops through some or all of the DOFs
+         INTEGER(IntKi)               :: J                                               ! Counter for elements
+         INTEGER(IntKi)               :: K                                               ! Counter for blades
+         INTEGER(IntKi)               :: NodeNum                                         ! Node number for blade element (on a single mesh)
+            
+     
+      
+         RtHSdat%FSTipDrag = 0.0_ReKi
+         RtHSdat%rSAerCen = 0.0
+         RtHSdat%MMAero = 0.0
+         RtHSdat%FSAero = 0.0
+         RtHSdat%FrcPRott = 0.0
+         RtHSdat%MomLPRott = 0.0
+         RtHSdat%PFrcVGnRt = 0.0    
+         RtHSdat%PMomNGnRt = 0.0
+         RtHSdat%FrcVGnRtt = 0.0
+         RtHSdat%MomNGnRtt = 0.0
+         RtHSdat%PFrcWTail = 0.0    
+         RtHSdat%PMomNTail = 0.0
+         RtHSdat%FrcWTailt = 0.0    
+         RtHSdat%MomNTailt = 0.0
+         RtHSdat%PFrcONcRt = 0.0    
+         RtHSdat%PMomBNcRt = 0.0
+         RtHSdat%FrcONcRtt = 0.0    
+         RtHSdat%MomBNcRtt = 0.0
+      !.....................................
+      ! PFTHydro and PMFHydro   
+      !  (requires TwrAddedMass)   
+      !.....................................
+      
+         ! Compute the partial hydrodynamic forces and moments per unit length
+         !   (including those associated with the QD2T()'s and those that are not) at the current tower element (point T) / (body F):
+      
+         ! NOTE: These forces are named PFTHydro, PMFHydro, FTHydrot, and MFHydrot. However, the names should not imply that the 
+         !       forces are a result of hydrodynamic contributions only.  These tower forces contain contributions from any external 
+         !       load acting on the tower other than loads transmitted from aerodynamics.  For example, these tower forces contain 
+         !       contributions from foundation stiffness and damping [not floating] or mooring line restoring and damping,
+         !       as well as hydrostatic and hydrodynamic contributions [offshore].
+   
+         DO J=1,p%TwrNodes
+         
+            RtHSdat%PFTHydro(:,J,:) = 0.0
+            RtHSdat%PMFHydro(:,J,:) = 0.0
+         END DO !J
+      
+      !.....................................
+      ! FTHydrot and MFHydrot   
+      !  (requires TwrAddedMass)   
+      !.....................................
+         
+         DO J=1,p%TwrNodes
+            RtHSdat%FTHydrot(:,J) = 0.0
+            RtHSdat%MFHydrot(:,J) = 0.0
+         END DO !J
+         
+      !.....................................
+      ! PFrcT0Trb and PMomX0Trb
+      !  (requires PFrcONcRt, PMomBNcRt, PFrcT0Trb, PMomX0Trb, PFTHydro, PMFHydro)
+      !.....................................
+      
+            ! Initialize the partial forces and moments (including those associated
+            !   with the QD2T()'s and those that are not) at the tower base (point T(0))  using everything but the tower:
+      
+         RtHSdat%PFrcT0Trb = RtHSdat%PFrcONcRt   ! Initialize these partial forces and moments
+         RtHSdat%PMomX0Trb = RtHSdat%PMomBNcRt   ! using all of the effects above the yaw bearing
+         DO I = 1,p%DOFs%NActvDOF ! Loop through all active (enabled) DOFs
+      
+            TmpVec  = CROSS_PRODUCT(  RtHSdat%rT0O, RtHSdat%PFrcONcRt(:,p%DOFs%SrtPS(I)) )   ! The portion of PMomX0Trb associated with the PFrcONcRt
+      
+            RtHSdat%PMomX0Trb(:,p%DOFs%SrtPS(I)) = RtHSdat%PMomX0Trb(:,p%DOFs%SrtPS(I)) + TmpVec
+      
+         ENDDO             ! I - All active (enabled) DOFs
+         DO I = 1,p%DOFs%NPTE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the yaw bearing center of mass (point O)
+      
+            TmpVec1 = -p%YawBrMass*RtHSdat%PLinVelEO(p%DOFs%PTE(I),0,:)               ! The portion of PFrcT0Trb associated with the YawBrMass
+            TmpVec2 = CROSS_PRODUCT( RtHSdat%rT0O,               TmpVec1 )   ! The portion of PMomX0Trb associated with the YawBrMass
+      
+            RtHSdat%PFrcT0Trb(:,p%DOFs%PTE(I)  ) = RtHSdat%PFrcT0Trb(:,p%DOFs%PTE(I)  ) + TmpVec1
+            RtHSdat%PMomX0Trb(:,p%DOFs%PTE(I)  ) = RtHSdat%PMomX0Trb(:,p%DOFs%PTE(I)  ) + TmpVec2
+      
+         ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the yaw bearing center of mass (point O)
+      
+         TmpVec1 = -p%YawBrMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccEOt ) ! The portion of FrcT0Trbt associated with the YawBrMass
+         TmpVec2 = CROSS_PRODUCT( RtHSdat%rT0O,   TmpVec1 )               ! The portion of MomX0Trbt associated with the YawBrMass
+         TmpVec3 = CROSS_PRODUCT( RtHSdat%rT0O, RtHSdat%FrcONcRtt )               ! The portion of MomX0Trbt associated with the FrcONcRtt
+      
+         RtHSdat%FrcT0Trbt = RtHSdat%FrcONcRtt + TmpVec1
+         RtHSdat%MomX0Trbt = RtHSdat%MomBNcRtt + TmpVec2 + TmpVec3   
+         
+         ! Integrate to find the total partial forces and moments (including those
+         !   associated with the QD2T()'s and those that are not) at the tower base (point T(0)):
+         DO J=1,p%TwrNodes
+      
+            DO I = 1,p%DOFs%NPTE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tower
+      
+               TmpVec1 = RtHSdat%PFTHydro(:,J,p%DOFs%PTE(I))*p%DHNodes(J) - p%TElmntMass(J)*RtHSdat%PLinVelET(J,p%DOFs%PTE(I),0,:)           ! The portion of PFrcT0Trb associated with tower element J
+               TmpVec2 = CROSS_PRODUCT( RtHSdat%rT0T(:,J), TmpVec1 )                 ! The portion of PMomX0Trb associated with tower element J
+               TmpVec3 = RtHSdat%PMFHydro(:,J,p%DOFs%PTE(I))*p%DHNodes(J)             ! The added moment applied at tower element J
+      
+               RtHSdat%PFrcT0Trb(:,p%DOFs%PTE(I)) = RtHSdat%PFrcT0Trb(:,p%DOFs%PTE(I)) + TmpVec1
+               RtHSdat%PMomX0Trb(:,p%DOFs%PTE(I)) = RtHSdat%PMomX0Trb(:,p%DOFs%PTE(I)) + TmpVec2 + TmpVec3
+      
+            ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the tower
+      
+            TmpVec1 = ( RtHSdat%FTHydrot(:,J) )*p%DHNodes(J) &
+                    - p%TElmntMass(J)*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccETt(:,J) )          ! The portion of FrcT0Trbt associated with tower element J
+            TmpVec2 = CROSS_PRODUCT( RtHSdat%rT0T(:,J), TmpVec1 )                                 ! The portion of MomX0Trbt associated with tower element J
+            TmpVec3 = ( RtHSdat%MFHydrot(:,J) )*p%DHNodes(J)                                      ! The external moment applied to tower element J
+      
+            RtHSdat%FrcT0Trbt = RtHSdat%FrcT0Trbt + TmpVec1
+      
+            RtHSdat%MomX0Trbt = RtHSdat%MomX0Trbt + TmpVec2 + TmpVec3
+      
+         END DO !J
+      
+      !.....................................
+      ! PFZHydro and  PMXHydro  
+      !  ( requires PtfmAddedMass )
+      !.....................................   
+         
+         !..................................................................................................................................
+         ! Compute the partial platform forces and moments (including those associated with the QD2T()'s and those that are not) at the
+         ! platform reference (point Z) / (body X).
+         !
+         ! NOTE: These forces are named PFZHydro, PMXHydro, FZHydrot, and MXHydrot. However, the names should not imply that the forces
+         !   are a result of hydrodynamic contributions only. These platform forces contain contributions from any external load acting
+         !   on the platform other than loads transmitted from the wind turbine. For example, these platform forces contain contributions
+         !   from foundation stiffness and damping [not floating] or mooring line restoring and damping [floating], as well as hydrostatic
+         !   and hydrodynamic contributions [offshore].
+         !bjj: m%RtHS%PFZHydro, %PMXHydro, %FZHydrot, and %MXHydrot are not used in the output routine anymore
+         !      (because of their dependence on inputs, u)
+      
+         RtHSdat%PFZHydro = 0.0
+         RtHSdat%PMXHydro = 0.0
+         DO I = 1,p%DOFs%NPYE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the platform center of mass (point Y)
+      
+            RtHSdat%PFZHydro(p%DOFs%PYE(I),:) = - u%PtfmAddedMass(DOF_Sg,p%DOFs%PYE(I))*RtHSdat%PLinVelEZ(DOF_Sg,0,:) &
+                                                - u%PtfmAddedMass(DOF_Sw,p%DOFs%PYE(I))*RtHSdat%PLinVelEZ(DOF_Sw,0,:) &
+                                                - u%PtfmAddedMass(DOF_Hv,p%DOFs%PYE(I))*RtHSdat%PLinVelEZ(DOF_Hv,0,:)
+            RtHSdat%PMXHydro(p%DOFs%PYE(I),:) = - u%PtfmAddedMass(DOF_R ,p%DOFs%PYE(I))*RtHSdat%PAngVelEX(DOF_R ,0,:) &
+                                                - u%PtfmAddedMass(DOF_P ,p%DOFs%PYE(I))*RtHSdat%PAngVelEX(DOF_P ,0,:) &
+                                                - u%PtfmAddedMass(DOF_Y ,p%DOFs%PYE(I))*RtHSdat%PAngVelEX(DOF_Y ,0,:)
+      
+         ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the platform center of mass (point Y)
+      
+         RtHSdat%FZHydrot = u%PlatformPtMesh%Force(DOF_Sg,1)*RtHSdat%PLinVelEZ(DOF_Sg,0,:) &
+                          + u%PlatformPtMesh%Force(DOF_Sw,1)*RtHSdat%PLinVelEZ(DOF_Sw,0,:) &
+                          + u%PlatformPtMesh%Force(DOF_Hv,1)*RtHSdat%PLinVelEZ(DOF_Hv,0,:)
+         RtHSdat%MXHydrot = u%PlatformPtMesh%Moment(DOF_R-3,1)*RtHSdat%PAngVelEX(DOF_R ,0,:) &
+                          + u%PlatformPtMesh%Moment(DOF_P-3,1)*RtHSdat%PAngVelEX(DOF_P ,0,:) &
+                          + u%PlatformPtMesh%Moment(DOF_Y-3,1)*RtHSdat%PAngVelEX(DOF_Y ,0,:)
+         
+      !.....................................
+      ! PFrcZAll and PMomXAll  
+      !  (requires PFrcT0Trb, PMomX0Trb, PFZHydro, PMXHydro )
+      !.....................................   
+      
+         ! Define the partial forces and moments (including those associated with the QD2T()'s and those that are not) at the
+         !   platform reference (point Z) / (body X) using the turbine and platform effects:
+      
+         RtHSdat%PFrcZAll = RtHSdat%PFrcT0Trb ! Initialize these partial forces and moments
+         RtHSdat%PMomXAll = RtHSdat%PMomX0Trb ! using the effects from the wind turbine
+         DO I = 1,p%DOFs%NActvDOF ! Loop through all active (enabled) DOFs
+      
+            TmpVec = CROSS_PRODUCT( RtHSdat%rZT0, RtHSdat%PFrcT0Trb(:,p%DOFs%SrtPS(I)) )   ! The portion of PMomXAll associated with the PFrcT0Trb
+      
+            RtHSdat%PMomXAll(:,p%DOFs%SrtPS(I)) = RtHSdat%PMomXAll(:,p%DOFs%SrtPS(I)) + TmpVec
+      
+         ENDDO             ! I - All active (enabled) DOFs
+         DO I = 1,p%DOFs%NPYE  ! Loop through all active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the platform center of mass (point Y)
+      
+            TmpVec1 = -p%PtfmMass*RtHSdat%PLinVelEY(p%DOFs%PYE(I),0,:)                ! The portion of PFrcZAll associated with the PtfmMass
+            TmpVec2 = CROSS_PRODUCT( RtHSdat%rZY ,               TmpVec1 )   ! The portion of PMomXAll associated with the PtfmMass
+      
+            RtHSdat%PFrcZAll(:,p%DOFs%PYE(I)) = RtHSdat%PFrcZAll(:,p%DOFs%PYE(I)  )        + RtHSdat%PFZHydro(p%DOFs%PYE(I),:) + TmpVec1
+            RtHSdat%PMomXAll(:,p%DOFs%PYE(I)) = RtHSdat%PMomXAll(:,p%DOFs%PYE(I)  )        + RtHSdat%PMXHydro(p%DOFs%PYE(I),:) + TmpVec2 &
+                                          - p%PtfmRIner*CoordSys%a1*DOT_PRODUCT( CoordSys%a1, RtHSdat%PAngVelEX(p%DOFs%PYE(I),0,:) )   &
+                                          - p%PtfmYIner*CoordSys%a2*DOT_PRODUCT( CoordSys%a2, RtHSdat%PAngVelEX(p%DOFs%PYE(I),0,:) )   &
+                                          - p%PtfmPIner*CoordSys%a3*DOT_PRODUCT( CoordSys%a3, RtHSdat%PAngVelEX(p%DOFs%PYE(I),0,:) )
+      
+         ENDDO          ! I - All active (enabled) DOFs that contribute to the QD2T-related linear accelerations of the platform center of mass (point Y)
+      
+      !.....................................
+      ! FrcZAllt and MomXAllt
+      !  (requires FrcT0Trbt, MomX0Trbt)
+      !.....................................
+      
+         TmpVec1 = -p%PtfmMass*( p%Gravity*CoordSys%z2 + RtHSdat%LinAccEYt  )                                              ! The portion of FrcZAllt associated with the PtfmMass
+         TmpVec2 = CROSS_PRODUCT( RtHSdat%rZY      ,   TmpVec1 )                                                                      ! The portion of MomXAllt associated with the PtfmMass
+         TmpVec3 = CROSS_PRODUCT( RtHSdat%rZT0     , RtHSdat%FrcT0Trbt )                                                      ! The portion of MomXAllt associated with the FrcT0Trbt
+         TmpVec  = p%PtfmRIner*CoordSys%a1*DOT_PRODUCT( CoordSys%a1, RtHSdat%AngVelEX  ) &      ! = ( Platform inertia dyadic ) dot ( angular velocity of platform in the inertia frame )
+                 + p%PtfmYIner*CoordSys%a2*DOT_PRODUCT( CoordSys%a2, RtHSdat%AngVelEX  ) &
+                 + p%PtfmPIner*CoordSys%a3*DOT_PRODUCT( CoordSys%a3, RtHSdat%AngVelEX  )
+         TmpVec4 = CROSS_PRODUCT( -RtHSdat%AngVelEX,   TmpVec  )                                                      ! = ( -angular velocity of platform in the inertia frame ) cross ( TmpVec )
+      
+         RtHSdat%FrcZAllt = RtHSdat%FrcT0Trbt + RtHSdat%FZHydrot + TmpVec1
+         RtHSdat%MomXAllt = RtHSdat%MomX0Trbt + RtHSdat%MXHydrot + TmpVec2 + TmpVec3 + TmpVec4   
+         
+         
+      END SUBROUTINE CalculateForcesMoments2
 !----------------------------------------------------------------------------------------------------------------------------------
 !> This routine is used to populate the AugMat matrix for RtHS (CalcContStateDeriv)
 SUBROUTINE FillAugMat( p, x, CoordSys, u, HSSBrTrq, RtHSdat, AugMat )

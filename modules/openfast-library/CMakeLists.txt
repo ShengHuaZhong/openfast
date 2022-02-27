@@ -23,7 +23,7 @@ if (GENERATE_TYPES)
 endif()
 
 add_library(openfast_prelib src/FAST_Types.f90)
-
+find_package(cJSON CONFIG REQUIRED)
 target_link_libraries(openfast_prelib
   nwtclibs
   ifwlib
@@ -50,8 +50,17 @@ add_library(openfast_postlib
   src/FAST_Mods.f90
   src/FAST_Subs.f90
   src/FAST_Solver.f90
+  src/udp_interface.c
+  src/AHV_Model_data.cpp
+  src/AHV_Model.cpp
+  src/interface.cpp
+  src/rt_nonfinite.cpp
+  src/rtGetInf.cpp
+  src/rtGetNaN.cpp
+  src/Wave_loads.cpp
+  src/Wave.cpp
   )
-target_link_libraries(openfast_postlib openfast_prelib scdataexlib foamfastlib versioninfolib)
+target_link_libraries(openfast_postlib openfast_prelib scdataexlib foamfastlib versioninfolib ${CJSON_LIBRARIES})
 
 add_library(openfastlib src/FAST_Library.f90)
 target_link_libraries(openfastlib openfast_postlib openfast_prelib scdataexlib foamfastlib)

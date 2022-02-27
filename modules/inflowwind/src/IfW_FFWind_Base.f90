@@ -986,7 +986,7 @@ END SUBROUTINE ConvertFFWind_to_Bladed
       ! tell a simulation program how to rescale the data.
 
    if ( abs(MeanFFWS) < 0.1_ReKi ) then
-      MeanFFWS_nonZero = sign( 0.1, MeanFFWS )
+      MeanFFWS_nonZero = sign( 0.1_ReKi, MeanFFWS )
    else
       MeanFFWS_nonZero = MeanFFWS
    end if

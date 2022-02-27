@@ -642,8 +642,8 @@ contains
       ! Test trailed vorticity
 !       LatticeGamma2(1,:)=1
 !       LatticeGamma2(2,:)=2
-      CALL MeshMe(LatticePoints1,(/0.,0.,0./))
-      CALL MeshMe(LatticePoints2,(/0.,0.,1./))
+      CALL MeshMe(LatticePoints1,(/0._ReKi,0._ReKi,0._ReKi/))
+      CALL MeshMe(LatticePoints2,(/0._ReKi,0._ReKi,1._ReKi/))
 
       CALL WrVTK_Lattice('Points1.vtk',mvtk,LatticePoints1, LatticeGamma1, bladeframe=bladeframe)
       CALL WrVTK_Lattice('Points2.vtk',mvtk,LatticePoints2, LatticeGamma2, bladeframe=bladeframe)
