@@ -5993,6 +5993,7 @@ SUBROUTINE FAST_AdvanceStates( t_initial, n_t_global, p_FAST, m_FAST, ED, BD, Sr
       ! Update tug position and anchor cable length
       !----------------------------------------------------------------------------------------
          CALL update_ship_control(Ship1_Control_Order, Ship2_Control_Order, Ship3_Control_Order, Ship4_Control_Order)
+           
          CALL shipsetfun1(Mean_Wave_Height, Ship1_Control_Order%keep_head, Wave_Direction, Current_Direction, Current_Speed, Ship1_Control_Order%keep_pos, &
                           Ship1_Control_Order%Target_X, Ship1_Control_Order%Target_Y, Ship1_Control_Order%Target_HEAD,&
                           Ship1_Line_Force)
@@ -6015,6 +6016,8 @@ SUBROUTINE FAST_AdvanceStates( t_initial, n_t_global, p_FAST, m_FAST, ED, BD, Sr
          CALL Set_Vessel_Freedom( MD%u, MD%m,Ship3_Freedom, Ship3_Velocity, 7)
          CALL Set_Vessel_Freedom( MD%u, MD%m,Ship4_Freedom, Ship4_Velocity, 8)
 
+         CALL Set_Line_length(MD%m,p_FAST%DT, 5,-30.0)
+         CALL Set_Line_length(MD%m,p_FAST%DT, 6,-30.0)
       DO j_ss = 1, p_FAST%n_substeps( Module_MD )
          n_t_module = n_t_global*p_FAST%n_substeps( Module_MD ) + j_ss - 1
          t_module   = n_t_module*p_FAST%dt_module( Module_MD ) + t_initial
