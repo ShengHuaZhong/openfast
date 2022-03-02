@@ -29,6 +29,8 @@ MODULE MoorDyn
 
    TYPE(ProgDesc), PARAMETER            :: MD_ProgDesc = ProgDesc( 'MoorDyn', 'v1.01.02F', '8-Apr-2016' )
    
+   
+   PUBLIC :: FairLeadRotateToMove
    PUBLIC :: FLines_OUT
    PUBLIC :: Line_OUT
    PUBLIC :: Set_Vessel_Freedom
@@ -42,18 +44,81 @@ MODULE MoorDyn
 
     CONTAINS
     
+    !=========================================   FairLeadRotateToMove   ===================================
+    !作业船位置设定
+   SUBROUTINE vessel_fixed_updata(m,freedom,VesselNum)
+   TYPE(MD_MiscVarType)          ,INTENT(INOUT) :: m              ! INTENT(INOUT)
+   REAL  , DIMENSION(1:6)        ,INTENT(IN   ) :: freedom
+   INTEGER(IntKi)                ,INTENT(IN   ) :: VesselNum              ! index  船是第几个点
+   
+   REAL(DbKi)                                   :: TransMat(3,3)
+   REAL(ReKi)                                   :: Pos(3)         ! array for setting absolute fairlead positions in mesh
+   INTEGER(IntKi)                               :: I              ! index
+   INTEGER(IntKi)                               :: J              ! index
+   
+   
+   REAL(R8Ki)                                   :: AHT_TranslationDisp(3)
+   
+
+        Pos(1) = m%ConnectList(VesselNum)%conX ! set relative position of each fairlead i (I'm pretty sure this is just relative to ptfm origin)
+        Pos(2) = m%ConnectList(VesselNum)%conY
+        Pos(3) = m%ConnectList(VesselNum)%conZ
+      
+        !求船偏移量
+        CALL FairLeadRotateToMove(freedom(4),freedom(5),freedom(6), TransMat)
+        
+        DO J = 1,3
+            
+            AHT_TranslationDisp(J) = freedom(J) + Transmat(1,J)*Pos(1) + Transmat(2,J)*Pos(2) + TransMat(3,J)*Pos(3) - Pos(J)
+            m%ConnectList(VesselNum)%r(J)  = Pos(J) + AHT_TranslationDisp(J)
+            m%ConnectList(VesselNum)%rd(J) = 0.0  ! 初始
+
+        END DO
+ 
+         
+   
+   
+   
+   END SUBROUTINE vessel_fixed_updata
+    
+    
+    !=========================================   FairLeadRotateToMove   ===================================
+    !作业船位置设定
+   SUBROUTINE FairLeadRotateToMove(Roll,Pitch,Yaw,TransMat)
+   
+   REAL          ,INTENT(IN   ) :: Roll  
+   REAL          ,INTENT(IN   ) :: Pitch
+   REAL          ,INTENT(IN   ) :: Yaw
+   
+   REAL(DbKi)    ,INTENT(  OUT) :: TransMat(3,3)  ! rotation matrix for setting fairlead positions correctly if there is initial platform rotation
+    
+   INTEGER(IntKi)                               :: I              ! index
+   INTEGER(IntKi)                               :: J              ! index
+   INTEGER(IntKi)                               :: K              ! index
+     
+   TransMat(1,1) = cos(Yaw) * cos(pitch)
+   TransMat(1,2) = sin(Yaw) * cos(pitch)
+   TransMat(1,3) = -sin(pitch)
+   TransMat(2,1) = cos(Yaw) * sin(Pitch)-sin(Yaw) * cos(Roll)
+   TransMat(2,2) = sin(Yaw) * sin(Pitch) * sin(Roll) + cos(Yaw) * cos(Roll)
+   TransMat(2,3) = cos(Pitch) * sin(Roll)
+   TransMat(3,1) = cos(Roll)*sin(Pitch)*cos(Yaw) + sin(Yaw)*sin(Roll)
+   TransMat(3,2) = sin(Yaw)*sin(Pitch)*cos(Roll)-cos(Yaw)*sin(Roll)
+   TransMat(3,3) = cos(Pitch)*cos(Roll)
+   END SUBROUTINE FairLeadRotateToMove
     
     !=========================================   Set_Vessel_Fredom   ===================================
-    !��ҵ��λ���趨
+    !作业船位置设定
    SUBROUTINE Set_Vessel_Freedom(u, m, VesselFreedom,VesselVelocity,fairlead_num)
    
-   REAL  , DIMENSION(1:6)        ,INTENT(IN   ) :: VesselFreedom  !�������ɶ� m m m rad rad rad
-   REAL  , DIMENSION(1:6)        ,INTENT(IN   ) :: VesselVelocity !�������ɶ��˶��ٶ� m/s  m/s m/s rad/s rad/s rad/s
-   INTEGER                       ,INTENT(IN   ) :: fairlead_num   !�������ɶȶ�Ӧ���¿ױ��
+   REAL  , DIMENSION(1:6)        ,INTENT(IN   ) :: VesselFreedom  !船六自由度 m m m rad rad rad
+   REAL  , DIMENSION(1:6)        ,INTENT(IN   ) :: VesselVelocity !船六自由度运动速度 m/s  m/s m/s rad/s rad/s rad/s
+   INTEGER                       ,INTENT(IN   ) :: fairlead_num   !此六自由度对应导缆孔编号
    
    TYPE(MD_MiscVarType)          ,INTENT(INOUT) :: m              ! INTENT(INOUT)
    TYPE(MD_InputType),           INTENT(INOUT)  :: u              ! INTENT( OUT) : An initial guess for the input; input mesh must be defined
 
+   
    REAL(DbKi)                                   :: TransMat(3,3)  ! rotation matrix for setting fairlead positions correctly if there is initial platform rotation
    INTEGER(IntKi)                               :: ErrStat2       ! Error status of the operation
    CHARACTER(ErrMsgLen)                         :: ErrMsg2        ! Error message if ErrStat2 /= ErrID_None
@@ -63,87 +128,82 @@ MODULE MoorDyn
    INTEGER(IntKi)                               :: J              ! index
    INTEGER(IntKi)                               :: K              ! index
    
-  
-   !���¿�λ��
-   Pos(1) = m%ConnectList(m%FairIdList(fairlead_num))%conX ! set relative position of each fairlead i (I'm pretty sure this is just relative to ptfm origin)
-   Pos(2) = m%ConnectList(m%FairIdList(fairlead_num))%conY
-   Pos(3) = m%ConnectList(m%FairIdList(fairlead_num))%conZ
+   REAL(R8Ki)                                   :: AHT_TranslationDisp(3)
    
+   !导缆孔位置
+   Pos(1) = m%ConnectList(fairlead_num)%conX ! set relative position of each fairlead i (I'm pretty sure this is just relative to ptfm origin)
+   Pos(2) = m%ConnectList(fairlead_num)%conY
+   Pos(3) = m%ConnectList(fairlead_num)%conZ
    
-   CALL SmllRotTrans('initial fairlead positions due to platform rotation', VesselFreedom(4),VesselFreedom(5),VesselFreedom(6), TransMat, '', ErrStat2, ErrMsg2)  ! account for possible platform rotation
 
+   CALL FairLeadRotateToMove(VesselFreedom(4),VesselFreedom(5),VesselFreedom(6), TransMat)
 
-         ! Apply initial platform rotations and translations (fixed Jun 19, 2015)  TranslationDisp��ƫ����
-         u%PtFairleadDisplacement%TranslationDisp(1,fairlead_num) = VesselFreedom(1) + TransMat(1,1)*Pos(1) + TransMat(2,1)*Pos(2) + TransMat(3,1)*Pos(3) - Pos(1)
-         u%PtFairleadDisplacement%TranslationDisp(2,fairlead_num) = VesselFreedom(2) + TransMat(1,2)*Pos(1) + TransMat(2,2)*Pos(2) + TransMat(3,2)*Pos(3) - Pos(2)
-         u%PtFairleadDisplacement%TranslationDisp(3,fairlead_num) = VesselFreedom(3) + TransMat(1,3)*Pos(1) + TransMat(2,3)*Pos(2) + TransMat(3,3)*Pos(3) - Pos(3)
-
-         !ƽ���ٶ�
-         u%PtFairleadDisplacement%TranslationVel(1,fairlead_num) = VesselVelocity(1)
-         u%PtFairleadDisplacement%TranslationVel(2,fairlead_num) = VesselVelocity(2)
-         u%PtFairleadDisplacement%TranslationVel(3,fairlead_num) = VesselVelocity(3)
-         !��ת�ٶ�
-         u%PtFairleadDisplacement%RotationVel(1,fairlead_num) = VesselVelocity(4)
-         u%PtFairleadDisplacement%RotationVel(2,fairlead_num) = VesselVelocity(5)
-         u%PtFairleadDisplacement%RotationVel(3,fairlead_num) = VesselVelocity(6)
+   DO I = 1,3
+         AHT_TranslationDisp(I) = VesselFreedom(I) + TransMat(1,I)*Pos(1) + TransMat(2,I)*Pos(2) + TransMat(3,I)*Pos(3) - Pos(I)
+   END DO
    
+    DO I = 1,3     
+         m%ConnectList(fairlead_num)%r(I)  = Pos(I) + AHT_TranslationDisp(I)
+         m%ConnectList(fairlead_num)%rd(I) = VesselVelocity(I)  ! is this right? <<<
+    END DO    
+         
    END SUBROUTINE Set_Vessel_Freedom
     
    
    !=========================================   Set_Vessel_Freedom_Init   ===================================
-   !��ҵ����ʼλ���趨
+   !作业船初始位置设定
    
    SUBROUTINE Set_Vessel_Freedom_Init(InitInp, VesselFreedom_Init,fairlead_num)
    
-   REAL  , DIMENSION(1:6)        ,INTENT(IN   ) :: VesselFreedom_Init  !����ʼ�����ɶ� m m m rad rad rad
-   INTEGER                       ,INTENT(IN   ) :: fairlead_num   !�������ɶȶ�Ӧ���¿ױ��
+   REAL  , DIMENSION(1:6)        ,INTENT(IN   ) :: VesselFreedom_Init  !船初始六自由度 m m m rad rad rad
+   INTEGER                       ,INTENT(IN   ) :: fairlead_num   !此六自由度对应导缆孔编号
    
    TYPE(MD_InitInputType),       INTENT(INOUT)  :: InitInp     ! INTENT(INOUT) : Input data for initialization routine
    INTEGER                                      :: I
-   
+
    
    DO I = 1,6
    InitInp%PtfmInit(fairlead_num,I) = VesselFreedom_Init(I)
    END DO
    
-
+  
   
    END SUBROUTINE Set_Vessel_Freedom_Init 
     
    
    
    !=========================================   Set_Line_length   ===================================
-   !�շ��¿���
+   !收放缆控制
    SUBROUTINE Set_Line_length(m,dtime,Line_num,Winch)
    
    
    TYPE(MD_MiscVarType)          ,INTENT(INOUT) :: m           ! INTENT(INOUT)
    REAL(DbKi)                    , INTENT(IN   ):: dtime       ! fixed/constant global time step
-   INTEGER                       ,INTENT(IN   ) :: Line_num   !�������ɶȶ�Ӧ���¿ױ��
-   REAL                          ,INTENT(IN   ) :: Winch  !�ʳ��ٶ� m/min
+   INTEGER                       ,INTENT(IN   ) :: Line_num   !此六自由度对应导缆孔编号
+   REAL                          ,INTENT(IN   ) :: Winch  !绞车速度 m/min
    
    REAL                                         :: delength
    
    
    delength = Winch/60/(1/dtime)
    
-       !�γ���
+       !段长度
    m%LineList(Line_num)%l = m%LineList(Line_num)%l + delength / m%LineList(Line_num)%N
    
    END SUBROUTINE Set_Line_length
    
    !=========================================   Line_OUT   ===================================
-   !�����������
+   !缆绳坐标输出
    SUBROUTINE Line_OUT(m,Line1,Line2,Line3,Line4,Line5,Line6)
    
    TYPE(MD_MiscVarType)          ,INTENT(INOUT) :: m           ! INTENT(INOUT)
-   !INTEGER                       ,INTENT(IN   ) :: Line_num   !�������ɶȶ�Ӧ���¿ױ��
-   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line1!1����������
-   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line2!2����������
-   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line3!3����������
-   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line4!3����������
-   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line5!������9����������
-   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line6!������10����������
+   !INTEGER                       ,INTENT(IN   ) :: Line_num   !此六自由度对应导缆孔编号
+   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line1!1号拖缆坐标
+   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line2!2号拖缆坐标
+   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line3!3号拖缆坐标
+   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line4!3号拖缆坐标
+   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line5!蓝鲸号9号拖缆坐标
+   REAL  , DIMENSION(:,:), ALLOCATABLE   ,INTENT(  OUT)     :: Line6!蓝鲸号10号拖缆坐标
    
    INTEGER  :: i,j
    
@@ -155,7 +215,7 @@ MODULE MoorDyn
    ALLOCATE ( Line6(3,m%LineList(6)%N+1))
    
    DO i = 1,3
-            DO j = 0, m%LineList(i)%N                !����������
+            DO j = 0, m%LineList(i)%N                !拖缆缆坐标
                 Line1(i,j+1) =  m%LineList(1)%r(i,j)
                 Line2(i,j+1) =  m%LineList(2)%r(i,j)
                 Line3(i,j+1) =  m%LineList(3)%r(i,j)
@@ -171,17 +231,17 @@ MODULE MoorDyn
    
    
    !=========================================   FLines_OUT   ===================================
-   !���¿�xyz�����������
+   !导缆孔xyz方向张力输出
    SUBROUTINE FLines_OUT(m,p,y,Flines1,Flines2,Flines3,Flines4)
    
    TYPE(MD_MiscVarType)          ,INTENT(INOUT) :: m           ! INTENT(INOUT)
    TYPE(MD_ParameterType),       INTENT(INOUT)  :: p           ! INTENT( OUT) : Parameters
    TYPE(MD_OutputType),          INTENT(INOUT)  :: y
-   !INTEGER                       ,INTENT(IN   ) :: Line_num   !�������ɶȶ�Ӧ���¿ױ��
-   REAL          ,INTENT(  OUT)     :: Flines1(3)!1������xyz�������
-   REAL          ,INTENT(  OUT)     :: Flines2(3)!2������xyz�������
-   REAL          ,INTENT(  OUT)     :: Flines3(3)!3������xyz�������
-   REAL          ,INTENT(  OUT)     :: Flines4(3)!4������xyz�������
+   !INTEGER                       ,INTENT(IN   ) :: Line_num   !此六自由度对应导缆孔编号
+   REAL          ,INTENT(  OUT)     :: Flines1(3)!1号拖缆xyz方向分力
+   REAL          ,INTENT(  OUT)     :: Flines2(3)!2号拖缆xyz方向分力
+   REAL          ,INTENT(  OUT)     :: Flines3(3)!3号拖缆xyz方向分力
+   REAL          ,INTENT(  OUT)     :: Flines4(3)!4号拖缆xyz方向分力
    INTEGER  :: i,j
    
    DO i = 1,3
@@ -236,7 +296,8 @@ MODULE MoorDyn
 
       CHARACTER(MaxWrScrLen)                       :: Message
 
- 
+     INTEGER                               :: VesselNum
+      
       REAL          :: displaylocal
       ErrStat = ErrID_None
       ErrMsg  = ""
@@ -410,12 +471,14 @@ MODULE MoorDyn
 
 
          ! set offset position of each node to according to initial platform position
-         CALL SmllRotTrans('initial fairlead positions due to platform rotation', InitInp%PtfmInit(i,4),InitInp%PtfmInit(i,5),InitInp%PtfmInit(i,6), TransMat, '', ErrStat2, ErrMsg2)  ! account for possible platform rotation
-
+         !CALL SmllRotTrans('initial fairlead positions due to platform rotation', InitInp%PtfmInit(i,4),InitInp%PtfmInit(i,5),InitInp%PtfmInit(i,6), TransMat, '', ErrStat2, ErrMsg2)  ! account for possible platform rotation
+         
+         CALL FairLeadRotateToMove(InitInp%PtfmInit(i,4),InitInp%PtfmInit(i,5),InitInp%PtfmInit(i,6), TransMat)
+         
          CALL CheckError( ErrStat2, ErrMsg2 )
          IF (ErrStat >= AbortErrLev) RETURN
 
-         ! Apply initial platform rotations and translations (fixed Jun 19, 2015)  TranslationDisp��ƫ����
+         ! Apply initial platform rotations and translations (fixed Jun 19, 2015)  TranslationDisp是偏移量
          u%PtFairleadDisplacement%TranslationDisp(1,i) = InitInp%PtfmInit(i,1) + Transmat(1,1)*Pos(1) + Transmat(2,1)*Pos(2) + TransMat(3,1)*Pos(3) - Pos(1)
          u%PtFairleadDisplacement%TranslationDisp(2,i) = InitInp%PtfmInit(i,2) + Transmat(1,2)*Pos(1) + Transmat(2,2)*Pos(2) + TransMat(3,2)*Pos(3) - Pos(2)
          u%PtFairleadDisplacement%TranslationDisp(3,i) = InitInp%PtfmInit(i,3) + Transmat(1,3)*Pos(1) + Transmat(2,3)*Pos(2) + TransMat(3,3)*Pos(3) - Pos(3)
@@ -427,7 +490,7 @@ MODULE MoorDyn
          
          !print *, 'Fairlead ', i, ' z TranslationDisp at start is ', u%PtFairleadDisplacement%TranslationDisp(3,i)
          !print *, 'Fairlead ', i, ' z Position at start is ', u%PtFairleadDisplacement%Position(3,i)
-
+         
 
          ! set each node as a point element
          CALL MeshConstructElement(u%PtFairleadDisplacement, ELEMENT_POINT, ErrStat2, ErrMsg2, i)
@@ -436,8 +499,9 @@ MODULE MoorDyn
          IF (ErrStat >= AbortErrLev) RETURN
 
       END DO    ! I
+    
 
-
+      
       CALL MeshCommit ( u%PtFairleadDisplacement, ErrStat, ErrMsg )
 
       CALL CheckError( ErrStat2, ErrMsg2 )
@@ -467,6 +531,8 @@ MODULE MoorDyn
          m%ConnectList(I)%rd(3) = 0.0_DbKi
       END DO
 
+      
+      
       ! then do it for fairlead types
       DO I = 1,p%NFairs
          DO J = 1, 3
@@ -475,6 +541,11 @@ MODULE MoorDyn
          END DO
       END DO
 
+            !设置fixed点位置及速度
+      DO I = 7,10
+        CALL vessel_fixed_updata(m,InitInp%PtfmInit(I,1:6),I)
+      END DO
+      
       ! for connect types, write the coordinates to the state vector
       DO I = 1,p%NConns
          x%states(6*I-2:6*I)   = m%ConnectList(m%ConnIdList(I))%r  ! double check order of r vs rd
