@@ -175,13 +175,13 @@ PROGRAM MoorDyn_Driver
    VesselFreedom4 = (/-201.0, -290.0, 0.0, 0.0, 0.0, 0.0/)
     
   !����1-4��ʼ�����ɶ��趨
-  CALL Set_Vessel_Freedom_Init(MD_InitInput, VesselFreedom1_Init,5)
+  CALL Set_Vessel_Freedom_Init(MD_InitInput, VesselFreedom1_Init,7)
   
-  CALL Set_Vessel_Freedom_Init(MD_InitInput, VesselFreedom2_Init,6)
+  CALL Set_Vessel_Freedom_Init(MD_InitInput, VesselFreedom2_Init,8)
   
-  CALL Set_Vessel_Freedom_Init(MD_InitInput, VesselFreedom3_Init,7)
+  CALL Set_Vessel_Freedom_Init(MD_InitInput, VesselFreedom3_Init,9)
   
-  CALL Set_Vessel_Freedom_Init(MD_InitInput, VesselFreedom4_Init,8)
+  CALL Set_Vessel_Freedom_Init(MD_InitInput, VesselFreedom4_Init,10)
   
   ! call the initialization routine
    CALL MD_Init( MD_InitInput      , &
