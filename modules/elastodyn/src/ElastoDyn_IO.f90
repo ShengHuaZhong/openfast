@@ -30,7 +30,7 @@ MODULE ElastoDyn_Parameters
 
    TYPE(ProgDesc), PARAMETER  :: ED_Ver = ProgDesc( 'ElastoDyn', '', '' )
    
-   REAL(ReKi), PARAMETER      :: SmallAngleLimit_Deg  =  15.0                     ! Largest input angle considered "small" (used as a check on input data), degrees
+   REAL(ReKi), PARAMETER      :: SmallAngleLimit_Deg  =  180.0                     ! Largest input angle considered "small" (used as a check on input data), degrees
 
 
       ! Parameters related to degrees of freedom (formerly MODULE DOFs)
