@@ -1090,7 +1090,7 @@ SUBROUTINE FAST_InitializeAll( t_initial, p_FAST, y_FAST, m_FAST, ED, BD, SrvD, 
       Freedom(4) = p_FAST%Ship1_Roll
       Freedom(5) = p_Fast%Ship1_Pitch
       Freedom(6) = p_Fast%Ship1_Yaw
-      CALL Set_Vessel_Freedom_Init(Init%InData_MD, Freedom, 5)
+      CALL Set_Vessel_Freedom_Init(Init%InData_MD, Freedom, 7)
 
       Freedom(1) = p_FAST%Ship2_Surge
       Freedom(2) = p_FAST%Ship2_Sway
@@ -1098,7 +1098,7 @@ SUBROUTINE FAST_InitializeAll( t_initial, p_FAST, y_FAST, m_FAST, ED, BD, SrvD, 
       Freedom(4) = p_FAST%Ship2_Roll
       Freedom(5) = p_Fast%Ship2_Pitch
       Freedom(6) = p_Fast%Ship2_Yaw
-      CALL Set_Vessel_Freedom_Init(Init%InData_MD, Freedom, 6)
+      CALL Set_Vessel_Freedom_Init(Init%InData_MD, Freedom, 8)
       
       Freedom(1) = p_FAST%Ship3_Surge
       Freedom(2) = p_FAST%Ship3_Sway
@@ -1106,7 +1106,7 @@ SUBROUTINE FAST_InitializeAll( t_initial, p_FAST, y_FAST, m_FAST, ED, BD, SrvD, 
       Freedom(4) = p_FAST%Ship3_Roll
       Freedom(5) = p_Fast%Ship3_Pitch
       Freedom(6) = p_Fast%Ship3_Yaw
-      CALL Set_Vessel_Freedom_Init(Init%InData_MD, Freedom, 7)
+      CALL Set_Vessel_Freedom_Init(Init%InData_MD, Freedom, 9)
 
       Freedom(1) = p_FAST%Ship4_Surge
       Freedom(2) = p_FAST%Ship4_Sway
@@ -1114,16 +1114,11 @@ SUBROUTINE FAST_InitializeAll( t_initial, p_FAST, y_FAST, m_FAST, ED, BD, SrvD, 
       Freedom(4) = p_FAST%Ship4_Roll
       Freedom(5) = p_Fast%Ship4_Pitch
       Freedom(6) = p_Fast%Ship4_Yaw
-      CALL Set_Vessel_Freedom_Init(Init%InData_MD, Freedom, 8)
+      CALL Set_Vessel_Freedom_Init(Init%InData_MD, Freedom, 10)
 
       Init%InData_MD%FileName  = p_FAST%MooringFile         ! This needs to be set according to what is in the FAST input file.
       Init%InData_MD%RootName  = p_FAST%OutFileRoot
-      DO a = 1,4
-         DO b = 1,6
-      Init%InData_MD%PtfmInit(a,b)  = Init%OutData_ED%PlatformPos(b) !ED%x(STATE_CURR)%QT(1:6)   ! initial position of the platform !bjj: this should come from Init%OutData_ED, not x_ED
-         END DO
-      END DO
-      DO a = 9,10
+      DO a = 1,6
          DO b = 1,6
       Init%InData_MD%PtfmInit(a,b)  = Init%OutData_ED%PlatformPos(b) !ED%x(STATE_CURR)%QT(1:6)   ! initial position of the platform !bjj: this should come from Init%OutData_ED, not x_ED
          END DO
@@ -4986,8 +4981,10 @@ SUBROUTINE FAST_Solution(t_initial, n_t_global, p_FAST, y_FAST, m_FAST, ED, BD, 
    !----------------------------------------------------------------------------------------
    IF (p_FAST%WrSttsTime) then
       IF ( MOD( n_t_global_next, p_FAST%n_SttsTime ) == 0 ) THEN
-         PRINT *, "ASDFSDFASDF ", p_FAST%Ship3_Surge, p_FAST%Ship3_Sway
-         PRINT *, "ASDDDDFADDF ", p_FAST%Ship4_Surge, p_FAST%Ship4_Sway 
+         !PRINT *, "ASDFSDFASDF ", p_FAST%Ship3_Surge, p_FAST%Ship3_Sway
+         !PRINT *, "ASDDDDFADDF ", p_FAST%Ship4_Surge, p_FAST%Ship4_Sway
+         CALL send_display_data(n_t_global_next)
+         CALL send_GPGGA()
       ENDIF
    ENDIF
 

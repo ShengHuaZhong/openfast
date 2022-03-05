@@ -24,6 +24,7 @@ endif()
 
 add_library(openfast_prelib src/FAST_Types.f90)
 find_package(cJSON CONFIG REQUIRED)
+find_package(PROJ COMPONENTS REQUIRED VERSION 9)
 target_link_libraries(openfast_prelib
   nwtclibs
   ifwlib
@@ -60,7 +61,7 @@ add_library(openfast_postlib
   src/Wave_loads.cpp
   src/Wave.cpp
   )
-target_link_libraries(openfast_postlib openfast_prelib scdataexlib foamfastlib versioninfolib ${CJSON_LIBRARIES})
+target_link_libraries(openfast_postlib openfast_prelib quadmath scdataexlib foamfastlib versioninfolib ${PROJ_LIBRARIES} ${CJSON_LIBRARIES})
 
 add_library(openfastlib src/FAST_Library.f90)
 target_link_libraries(openfastlib openfast_postlib openfast_prelib scdataexlib foamfastlib)

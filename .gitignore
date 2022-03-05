@@ -37,6 +37,7 @@ _build*/
 install/
 vs-build/
 debug_build/
+deb/
 
 # OS and IDE specific files
 .DS_Store
@@ -51,3 +52,5 @@ debug_build/
 *.aux
 *.nlo
 *.log
+openfast.deb
+pack.sh

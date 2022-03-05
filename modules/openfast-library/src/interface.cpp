@@ -7,13 +7,13 @@ static AH_Model_v1ModelClass AHV_Model_Obj;  // Instance of model class
 
 double turn[6] = {1, 1, -1, 1, 1, 1};
 
-double V1_Fairlead_pos[3] = {-60, 0, 0};  //µ¼ÀÂ¿×Î»ÖÃ
+double V1_Fairlead_pos[3] = {-60, 0, 0};  //ï¿½ï¿½ï¿½Â¿ï¿½Î»ï¿½ï¿½
 
-double V2_Fairlead_pos[3] = {-60, 0, 0};  //µ¼ÀÂ¿×Î»ÖÃ
+double V2_Fairlead_pos[3] = {-60, 0, 0};  //ï¿½ï¿½ï¿½Â¿ï¿½Î»ï¿½ï¿½
 
-double V3_Fairlead_pos[3] = {-60, 0, 0};  //µ¼ÀÂ¿×Î»ÖÃ
+double V3_Fairlead_pos[3] = {-60, 0, 0};  //ï¿½ï¿½ï¿½Â¿ï¿½Î»ï¿½ï¿½
 
-double V4_Fairlead_pos[3] = {-60, 0, 0};  //µ¼ÀÂ¿×Î»ÖÃ
+double V4_Fairlead_pos[3] = {-60, 0, 0};  //ï¿½ï¿½ï¿½Â¿ï¿½Î»ï¿½ï¿½
 extern "C" {
 void ship_init_fun_(
     __float128* dtime, double* V1_surge_init, double* V1_sway_init,
@@ -33,9 +33,7 @@ void ship_init_fun_(
     double* V4_roll_init, double* V4_pitch_init, double* V4_yaw_init)
 
 {
-  //º£¿ö²ÎÊý
-  printf("\tInitialization of tugboat mathematical model¡£\n");
-  printf("\ttime: %.36Qg\n", *dtime);
+  printf("\tInitialization of tugboat mathematical model\n");
 
   spectrum_type = 1;
 
@@ -130,7 +128,7 @@ void shipsetfun1_(double* MeaningWaveHeight, int* heading_contral_mode11,
 
   Current_speed = *CurrentSpeed;
 
-  heading_mode1 = *heading_contral_mode11;  // 1×Ô¶¯£¬0ÊÖ¶¯
+  heading_mode1 = *heading_contral_mode11;  // 1ï¿½Ô¶ï¿½ï¿½ï¿½0ï¿½Ö¶ï¿½
 
   heading_angle_ref1 = *heading_angle1;
 

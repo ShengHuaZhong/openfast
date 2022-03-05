@@ -14,13 +14,28 @@
 //
 #include "AHV_Model.h"
 
-#include <cstdio>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <vector>
 
 #include "AHV_Model_private.h"
+using namespace std;
+std::vector<std::string> entries;
+std::ofstream fout;
+int write_local = 0;
+
+int fileload = 1;
 
 // Named constants for Chart: '<S64>/Chart'
 const uint8_T AHV_Model_IN_hold = 1U;
 const uint8_T AHV_Model_IN_unhold = 2U;
+//--------��������---------
+real_T Featured = 1;
+real_T SidePush = 10;
+real_T MainThrust = 1;
+real_T FuThrust = 1;
+real_T AzimuthThrust = 10;
 
 // Exported block signals
 real_T spectrum_type;       // '<Root>/spectrum_type'
@@ -83,6 +98,48 @@ real_T AHV_speed3;          // '<Root>/AHV_speed3'
 real_T eta_AHV4[6];         // '<Root>/eta_AHV4'
 real_T nu4[6];              // '<Root>/nu4'
 real_T AHV_speed4;          // '<Root>/AHV_speed4'
+
+string ReadLine(string filename, int line) {
+  int i = 0;
+  string temp;
+  fstream file;
+  file.open(filename, ios::in);
+
+  if (line <= 0) {
+    fileload = 0;
+    // cout << "Error 1: �������󣬲���Ϊ0��������" <<
+    // endl;
+  }
+
+  if (file.fail()) {
+    fileload = 0;
+    // cout << "Error 2: �ļ������ڡ�" << endl;
+  }
+
+  while (getline(file, temp) && i < line - 1) {
+    i++;
+  }
+
+  file.close();
+  return temp;
+}
+
+vector<string> split(const string& s,
+                     char delim)  // TODO: remove delim arg, it's unused!
+{
+  vector<string> elems;  // the vector of words to return
+
+  char str[100];                 // this gives some memory for the char array
+  strncpy(str, s.c_str(), 100);  // copy input string to str
+  char* pch;
+  pch = strtok(str, " \t");  // give strtok the c string of s
+  while (pch != NULL) {
+    elems.push_back(pch);
+    pch = strtok(NULL, " \t");  // split by spaces or tabs
+  }
+  return elems;
+}
+
 uint32_T plook_u32d_evencka(real_T u, real_T bp0, real_T bpSpace,
                             uint32_T maxIndex) {
   uint32_T bpIndex;
@@ -110,7 +167,7 @@ uint32_T plook_u32d_evencka(real_T u, real_T bp0, real_T bpSpace,
 }
 
 uint32_T plook_lincp(real_T u, const real_T bp[], uint32_T maxIndex,
-                     real_T *fraction, uint32_T *prevIndex) {
+                     real_T* fraction, uint32_T* prevIndex) {
   uint32_T bpIndex;
 
   // Prelookup - Index and Fraction
@@ -186,7 +243,7 @@ uint32_T linsearch_u32d(real_T u, const real_T bp[], uint32_T startIndex) {
 }
 
 uint32_T plook_evenc(real_T u, real_T bp0, real_T bpSpace, uint32_T maxIndex,
-                     real_T *fraction) {
+                     real_T* fraction) {
   uint32_T bpIndex;
   real_T invSpc;
   real_T fbpIndex;
@@ -220,17 +277,17 @@ uint32_T plook_evenc(real_T u, real_T bp0, real_T bpSpace, uint32_T maxIndex,
 // This function updates continuous states using the ODE4 fixed-step
 // solver algorithm
 //
-void AH_Model_v1ModelClass::rt_ertODEUpdateContinuousStates(RTWSolverInfo *si) {
+void AH_Model_v1ModelClass::rt_ertODEUpdateContinuousStates(RTWSolverInfo* si) {
   time_T t = rtsiGetT(si);
   time_T tnew = rtsiGetSolverStopTime(si);
   time_T h = rtsiGetStepSize(si);
-  real_T *x = rtsiGetContStates(si);
-  ODE4_IntgData *id = static_cast<ODE4_IntgData *>(rtsiGetSolverData(si));
-  real_T *y = id->y;
-  real_T *f0 = id->f[0];
-  real_T *f1 = id->f[1];
-  real_T *f2 = id->f[2];
-  real_T *f3 = id->f[3];
+  real_T* x = rtsiGetContStates(si);
+  ODE4_IntgData* id = static_cast<ODE4_IntgData*>(rtsiGetSolverData(si));
+  real_T* y = id->y;
+  real_T* f0 = id->f[0];
+  real_T* f1 = id->f[1];
+  real_T* f2 = id->f[2];
+  real_T* f3 = id->f[3];
   real_T temp;
   int_T i;
   int_T nXc = 475;
@@ -292,7 +349,7 @@ void AH_Model_v1ModelClass::rt_ertODEUpdateContinuousStates(RTWSolverInfo *si) {
 //    '<S271>/Cross-flow drag trapezoidal integration'
 //
 void AH_Model_v1ModelClass::Crossflowdragtrapezoidali_Reset(
-    real_T *memory2_PreviousInput, real_T *memory1_PreviousInput) {
+    real_T* memory2_PreviousInput, real_T* memory1_PreviousInput) {
   // InitializeConditions for Memory: '<S23>/memory2'
   *memory2_PreviousInput = 0.0;
 
@@ -308,8 +365,8 @@ void AH_Model_v1ModelClass::Crossflowdragtrapezoidali_Reset(
 //    '<S271>/Cross-flow drag trapezoidal integration'
 //
 void AH_Model_v1ModelClass::Crossflowdragtrapezoidalintegra(
-    real_T rtu_N, real_T rtu_dx, real_T rtu_v_r, real_T rtu_r, real_T *rty_sum1,
-    real_T *rty_sum2, real_T rtp_Lpp) {
+    real_T rtu_N, real_T rtu_dx, real_T rtu_v_r, real_T rtu_r, real_T* rty_sum1,
+    real_T* rty_sum2, real_T rtp_Lpp) {
   int32_T tmp;
   int32_T i;
   real_T rtb_x;
@@ -415,8 +472,8 @@ void AH_Model_v1ModelClass::Crossflowdragtrapezoidalintegra(
 //
 void AH_Model_v1ModelClass::AHV_Model_Chart(
     boolean_T rtu_hold, real_T rtu_x_ref, real_T rtu_y_ref, real_T rtu_x_hold,
-    real_T rtu_y_hold, real_T *rty_x_ref_rel, real_T *rty_y_ref_rel,
-    DW_Chart_AHV_Model_T *localDW) {
+    real_T rtu_y_hold, real_T* rty_x_ref_rel, real_T* rty_y_ref_rel,
+    DW_Chart_AHV_Model_T* localDW) {
   // Chart: '<S64>/Chart'
   if (localDW->is_active_c129_AHV_Model == 0U) {
     localDW->is_active_c129_AHV_Model = 1U;
@@ -519,8 +576,8 @@ void AH_Model_v1ModelClass::AHV_Model_IfActionSubsystem1(
 //    '<S336>/If Action Subsystem'
 //
 void AH_Model_v1ModelClass::AHV_Model_IfActionSubsystem_l(
-    real_T rtu_Increment, real_T rtu_main_T, real_T *rty_Out1,
-    const ConstB_IfActionSubsystem_AH_p_T *localC) {
+    real_T rtu_Increment, real_T rtu_main_T, real_T* rty_Out1,
+    const ConstB_IfActionSubsystem_AH_p_T* localC) {
   // Switch: '<S85>/Switch'
   if (rtu_main_T > 0.0) {
     *rty_Out1 = rtu_Increment;
@@ -720,6 +777,70 @@ void AH_Model_v1ModelClass::step() {
     int32_T i_0;
     real_T rtb_K3_u_tmp;
     real_T rtb_K2_u_tmp;
+    if (write_local == 0) {
+      write_local = 1;
+      fout.open("Thrust.txt");
+
+      fout << "x "
+           << "\t";
+      fout << "y "
+           << "\t";
+      fout << "heave "
+           << "\t";
+      fout << "roll "
+           << "\t";
+      fout << "pitch "
+           << "\t";
+      fout << "yaw "
+           << "\t";
+
+      fout << "velocities1 "
+           << "\t";
+      fout << "velocities2 "
+           << "\t";
+      fout << "velocities3 "
+           << "\t";
+      fout << "velocities4 "
+           << "\t";
+      fout << "velocities5 "
+           << "\t";
+      fout << "velocities6 "
+           << "\t";
+    }
+
+    //��
+    //./5MW_OC4Jckt_DLL_WTurb_WavesIrr_MGrowth/5MW_OC4Jckt_DLL_WTurb_WavesIrr_MGrowth.fst
+    // string path = "../openfast
+    // /home/zzzzzsh/Documents/source/openfast2/reg_tests/r-test/glue-codes/openfast/5MW_OC4Semi_Linear/ATH_SET.txt";
+    string path = "ATH_SET.txt";
+    string exePath[8];
+    for (int i = 1; i < 8; i++) {
+      exePath[i] = ReadLine(path, i);
+    }
+    if (fileload == 1)  //���سɹ��ٸ�ֵ
+    {
+      entries = split(exePath[2], ' ');
+      Featured = atof(entries[1].c_str());
+
+      entries = split(exePath[3], ' ');
+      SidePush = atof(entries[1].c_str());
+
+      entries = split(exePath[5], ' ');
+      MainThrust = atof(entries[1].c_str());
+
+      entries = split(exePath[6], ' ');
+      FuThrust = atof(entries[1].c_str());
+
+      entries = split(exePath[7], ' ');
+      AzimuthThrust = atof(entries[1].c_str());
+    } else {
+      Featured = 1;
+      SidePush = 1;
+      MainThrust = 1;
+      FuThrust = 1;
+      AzimuthThrust = 1;
+    }
+
     for (i = 0; i < 6; i++) {
       // Integrator: '<S13>/Integrator1' incorporates:
       //   Inport: '<Root>/Vessel_init1'
@@ -738,7 +859,19 @@ void AH_Model_v1ModelClass::step() {
 
       nu1[i] = AHV_Model_X.Integrator_CSTATE[i];
     }
+    fout << eta_AHV1[0] << "\t";
+    fout << eta_AHV1[1] << "\t";
+    fout << eta_AHV1[2] << "\t";
+    fout << eta_AHV1[3] << "\t";
+    fout << eta_AHV1[4] << "\t";
+    fout << eta_AHV1[5] << "\t";
 
+    fout << nu1[0] << "\t";
+    fout << nu1[1] << "\t";
+    fout << nu1[2] << "\t";
+    fout << nu1[3] << "\t";
+    fout << nu1[4] << "\t";
+    fout << nu1[5] << "\n";
     // Outport: '<Root>/AHV_speed1' incorporates:
     //   Gain: '<S16>/Gain'
     //   Gain: '<S16>/Gain1'
@@ -746,9 +879,9 @@ void AH_Model_v1ModelClass::step() {
     //   TransferFcn: '<S16>/Transfer Fcn'
 
     AHV_speed1 = std::floor(0.2 * AHV_Model_X.TransferFcn_CSTATE * 10.0) * 0.1;
-
-    // Gain: '<S12>/Gain' incorporates:
-    //   Inport: '<Root>/Current_direction'
+    // cout << AHV_speed1 << endl;
+    //  Gain: '<S12>/Gain' incorporates:
+    //    Inport: '<Root>/Current_direction'
 
     rtb_T33 = 0.017453292519943295 * Current_direction;
 
@@ -1186,7 +1319,7 @@ void AH_Model_v1ModelClass::step() {
 
     if (rtmIsMajorTimeStep((&AHV_Model_M))) {
       AHV_Model_DW.If_ActiveSubsystem =
-          static_cast<int8_T>(!(std::abs(rtb_Row1) <= 1.0));
+          static_cast<int8_T>(!(std::abs(rtb_Row1) <= Featured));
     }
 
     switch (AHV_Model_DW.If_ActiveSubsystem) {
@@ -1224,7 +1357,7 @@ void AH_Model_v1ModelClass::step() {
 
     if (rtmIsMajorTimeStep((&AHV_Model_M))) {
       AHV_Model_DW.If_ActiveSubsystem_a =
-          static_cast<int8_T>(!(std::abs(rtb_Switch_a) <= 10.0));
+          static_cast<int8_T>(!(std::abs(rtb_Switch_a) <= SidePush));
     }
 
     switch (AHV_Model_DW.If_ActiveSubsystem_a) {
@@ -2323,7 +2456,7 @@ void AH_Model_v1ModelClass::step() {
 
     if (rtmIsMajorTimeStep((&AHV_Model_M))) {
       AHV_Model_DW.If_ActiveSubsystem_h =
-          static_cast<int8_T>(!(std::abs(rtb_Row1_e) <= 1.0));
+          static_cast<int8_T>(!(std::abs(rtb_Row1_e) <= Featured));
     }
 
     switch (AHV_Model_DW.If_ActiveSubsystem_h) {
@@ -2361,7 +2494,7 @@ void AH_Model_v1ModelClass::step() {
 
     if (rtmIsMajorTimeStep((&AHV_Model_M))) {
       AHV_Model_DW.If_ActiveSubsystem_ig =
-          static_cast<int8_T>(!(std::abs(rtb_psi_dot) <= 10.0));
+          static_cast<int8_T>(!(std::abs(rtb_psi_dot) <= SidePush));
     }
 
     switch (AHV_Model_DW.If_ActiveSubsystem_ig) {
@@ -2460,7 +2593,7 @@ void AH_Model_v1ModelClass::step() {
     } else if (rtb_K2_u[0] < -2.0E+6) {
       rtb_psi_dot = -2.0E+6;
     } else {
-      rtb_psi_dot = rtb_K2_u[0];
+      rtb_psi_dot = rtb_K2_u[0] * MainThrust;
     }
 
     // End of Saturate: '<S150>/Surge Force Saturation'
@@ -2471,7 +2604,7 @@ void AH_Model_v1ModelClass::step() {
     } else if (rtb_K2_u[1] < -1.5E+6) {
       rtb_Switch_a = -1.5E+6;
     } else {
-      rtb_Switch_a = rtb_K2_u[1];
+      rtb_Switch_a = rtb_K2_u[1] * FuThrust;
     }
 
     // End of Saturate: '<S150>/Sway Force Saturation'
@@ -2482,7 +2615,7 @@ void AH_Model_v1ModelClass::step() {
     } else if (rtb_K2_u[2] < -2.0E+7) {
       rtb_Switch1 = -2.0E+7;
     } else {
-      rtb_Switch1 = rtb_K2_u[2];
+      rtb_Switch1 = rtb_K2_u[2] * AzimuthThrust;
     }
 
     // End of Saturate: '<S150>/Yaw Moment Saturation'
@@ -3450,7 +3583,7 @@ void AH_Model_v1ModelClass::step() {
 
     if (rtmIsMajorTimeStep((&AHV_Model_M))) {
       AHV_Model_DW.If_ActiveSubsystem_e =
-          static_cast<int8_T>(!(std::abs(rtb_Row1_e) <= 1.0));
+          static_cast<int8_T>(!(std::abs(rtb_Row1_e) <= Featured));
     }
 
     switch (AHV_Model_DW.If_ActiveSubsystem_e) {
@@ -3488,7 +3621,7 @@ void AH_Model_v1ModelClass::step() {
 
     if (rtmIsMajorTimeStep((&AHV_Model_M))) {
       AHV_Model_DW.If_ActiveSubsystem_k =
-          static_cast<int8_T>(!(std::abs(rtb_psi_dot) <= 10.0));
+          static_cast<int8_T>(!(std::abs(rtb_psi_dot) <= SidePush));
     }
 
     switch (AHV_Model_DW.If_ActiveSubsystem_k) {
@@ -3587,7 +3720,7 @@ void AH_Model_v1ModelClass::step() {
     } else if (rtb_K2_u[0] < -2.0E+6) {
       rtb_psi_dot = -2.0E+6;
     } else {
-      rtb_psi_dot = rtb_K2_u[0];
+      rtb_psi_dot = rtb_K2_u[0] * MainThrust;
     }
 
     // End of Saturate: '<S234>/Surge Force Saturation'
@@ -3598,7 +3731,7 @@ void AH_Model_v1ModelClass::step() {
     } else if (rtb_K2_u[1] < -1.5E+6) {
       rtb_Switch_a = -1.5E+6;
     } else {
-      rtb_Switch_a = rtb_K2_u[1];
+      rtb_Switch_a = rtb_K2_u[1] * FuThrust;
     }
 
     // End of Saturate: '<S234>/Sway Force Saturation'
@@ -3609,7 +3742,7 @@ void AH_Model_v1ModelClass::step() {
     } else if (rtb_K2_u[2] < -2.0E+7) {
       rtb_Switch1 = -2.0E+7;
     } else {
-      rtb_Switch1 = rtb_K2_u[2];
+      rtb_Switch1 = rtb_K2_u[2] * AzimuthThrust;
     }
 
     // End of Saturate: '<S234>/Yaw Moment Saturation'
@@ -4436,7 +4569,6 @@ void AH_Model_v1ModelClass::step() {
 
     rtb_psi_dot =
         rt_remd_snf(rtb_T33 + rtb_Switch_a, 6.2831853071795862) - rtb_Switch_a;
-
     if (rtmIsMajorTimeStep((&AHV_Model_M))) {
       // Chart: '<S316>/Chart' incorporates:
       //   Inport: '<Root>/Hold_Position4'
@@ -4577,7 +4709,7 @@ void AH_Model_v1ModelClass::step() {
 
     if (rtmIsMajorTimeStep((&AHV_Model_M))) {
       AHV_Model_DW.If_ActiveSubsystem_f =
-          static_cast<int8_T>(!(std::abs(rtb_Row1_e) <= 1.0));
+          static_cast<int8_T>(!(std::abs(rtb_Row1_e) <= Featured));
     }
 
     switch (AHV_Model_DW.If_ActiveSubsystem_f) {
@@ -4615,7 +4747,7 @@ void AH_Model_v1ModelClass::step() {
 
     if (rtmIsMajorTimeStep((&AHV_Model_M))) {
       AHV_Model_DW.If_ActiveSubsystem_hp =
-          static_cast<int8_T>(!(std::abs(rtb_psi_dot) <= 10.0));
+          static_cast<int8_T>(!(std::abs(rtb_psi_dot) <= SidePush));
     }
 
     switch (AHV_Model_DW.If_ActiveSubsystem_hp) {
@@ -4714,7 +4846,7 @@ void AH_Model_v1ModelClass::step() {
     } else if (rtb_K2_u[0] < -2.0E+6) {
       rtb_psi_dot = -2.0E+6;
     } else {
-      rtb_psi_dot = rtb_K2_u[0];
+      rtb_psi_dot = rtb_K2_u[0] * MainThrust;
     }
 
     // End of Saturate: '<S318>/Surge Force Saturation'
@@ -4725,7 +4857,7 @@ void AH_Model_v1ModelClass::step() {
     } else if (rtb_K2_u[1] < -1.5E+6) {
       rtb_Switch_a = -1.5E+6;
     } else {
-      rtb_Switch_a = rtb_K2_u[1];
+      rtb_Switch_a = rtb_K2_u[1] * FuThrust;
     }
 
     // End of Saturate: '<S318>/Sway Force Saturation'
@@ -4736,7 +4868,7 @@ void AH_Model_v1ModelClass::step() {
     } else if (rtb_K2_u[2] < -2.0E+7) {
       rtb_Switch1 = -2.0E+7;
     } else {
-      rtb_Switch1 = rtb_K2_u[2];
+      rtb_Switch1 = rtb_K2_u[2] * AzimuthThrust;
     }
 
     // End of Saturate: '<S318>/Yaw Moment Saturation'
@@ -5333,8 +5465,8 @@ void AH_Model_v1ModelClass::step() {
 // Derivatives for root system: '<Root>'
 void AH_Model_v1ModelClass::AHV_Model_derivatives() {
   int32_T i;
-  XDot_AHV_Model_T *_rtXdot;
-  _rtXdot = ((XDot_AHV_Model_T *)(&AHV_Model_M)->derivs);
+  XDot_AHV_Model_T* _rtXdot;
+  _rtXdot = ((XDot_AHV_Model_T*)(&AHV_Model_M)->derivs);
   for (i = 0; i < 6; i++) {
     // Derivatives for Integrator: '<S13>/Integrator1'
     _rtXdot->Integrator1_CSTATE[i] =
@@ -8452,7 +8584,7 @@ void AH_Model_v1ModelClass::initialize(double dtime) {
                        &(&AHV_Model_M)->Timing.stepSize0);
     rtsiSetdXPtr(&(&AHV_Model_M)->solverInfo, &(&AHV_Model_M)->derivs);
     rtsiSetContStatesPtr(&(&AHV_Model_M)->solverInfo,
-                         (real_T **)&(&AHV_Model_M)->contStates);
+                         (real_T**)&(&AHV_Model_M)->contStates);
     rtsiSetNumContStatesPtr(&(&AHV_Model_M)->solverInfo,
                             &(&AHV_Model_M)->Sizes.numContStates);
     rtsiSetNumPeriodicContStatesPtr(
@@ -8473,9 +8605,9 @@ void AH_Model_v1ModelClass::initialize(double dtime) {
   (&AHV_Model_M)->intgData.f[1] = (&AHV_Model_M)->odeF[1];
   (&AHV_Model_M)->intgData.f[2] = (&AHV_Model_M)->odeF[2];
   (&AHV_Model_M)->intgData.f[3] = (&AHV_Model_M)->odeF[3];
-  (&AHV_Model_M)->contStates = ((X_AHV_Model_T *)&AHV_Model_X);
+  (&AHV_Model_M)->contStates = ((X_AHV_Model_T*)&AHV_Model_X);
   rtsiSetSolverData(&(&AHV_Model_M)->solverInfo,
-                    static_cast<void *>(&(&AHV_Model_M)->intgData));
+                    static_cast<void*>(&(&AHV_Model_M)->intgData));
   rtsiSetSolverName(&(&AHV_Model_M)->solverInfo, "ode4");
   rtmSetTPtr((&AHV_Model_M), &(&AHV_Model_M)->Timing.tArray[0]);
   (&AHV_Model_M)->Timing.stepSize0 = dtime;
@@ -9077,7 +9209,7 @@ AH_Model_v1ModelClass::~AH_Model_v1ModelClass() {
 }
 
 // Real-Time Model get method
-AH_Model_v1ModelClass::RT_MODEL_AHV_Model_T *AH_Model_v1ModelClass::getRTM() {
+AH_Model_v1ModelClass::RT_MODEL_AHV_Model_T* AH_Model_v1ModelClass::getRTM() {
   return (&AHV_Model_M);
 }
 
