@@ -41,8 +41,8 @@ MODULE MoorDyn
    PUBLIC :: MD_CalcContStateDeriv
    PUBLIC :: MD_End
    PUBLIC :: Set_Line_length
-
-    CONTAINS
+   PUBLIC :: DisplayOUT
+   CONTAINS
     
     !=========================================   FairLeadRotateToMove   ===================================
     !作业船位置设定
@@ -75,10 +75,6 @@ MODULE MoorDyn
 
         END DO
  
-         
-   
-   
-   
    END SUBROUTINE vessel_fixed_updata
     
     
@@ -135,7 +131,7 @@ MODULE MoorDyn
    Pos(2) = m%ConnectList(fairlead_num)%conY
    Pos(3) = m%ConnectList(fairlead_num)%conZ
    
-
+   
    CALL FairLeadRotateToMove(VesselFreedom(4),VesselFreedom(5),VesselFreedom(6), TransMat)
 
    DO I = 1,3
@@ -185,11 +181,20 @@ MODULE MoorDyn
    REAL                                         :: delength
    
    
+   !PRINT *,"Set_Line_length: (Winch)", Winch
    delength = Winch/60/(1/dtime)
    
+
+   IF (sum(m%LineList(Line_num)%l) <= 150) THEN
+      delength = 0
+   END IF
+   
+
        !段长度
    m%LineList(Line_num)%l = m%LineList(Line_num)%l + delength / m%LineList(Line_num)%N
+   !PRINT *,"Set_Line_length: (delength)", m%LineList(Line_num)%l
    
+
    END SUBROUTINE Set_Line_length
    
    !=========================================   Line_OUT   ===================================
@@ -223,7 +228,7 @@ MODULE MoorDyn
                 Line5(i,j+1) =  m%LineList(5)%r(i,j)
                 Line6(i,j+1) =  m%LineList(6)%r(i,j)
             END DO
-        END DO
+   END DO
    
 
   
@@ -246,10 +251,10 @@ MODULE MoorDyn
    
    DO i = 1,3
 
-         Flines1(i) = y%PtFairleadLoad%Force(i,5)  !Field: Force vectors (3,NNodes)
-         Flines2(i) = y%PtFairleadLoad%Force(i,6)  !Field: Force vectors (3,NNodes)
-         Flines3(i) = y%PtFairleadLoad%Force(i,7)  !Field: Force vectors (3,NNodes)
-         Flines4(i) = y%PtFairleadLoad%Force(i,8)  !Field: Force vectors (3,NNodes)
+         Flines1(i) = m%ConnectList(7)%Ftot(i)  !Field: Force vectors (3,NNodes)
+         Flines2(i) = m%ConnectList(8)%Ftot(i)  !Field: Force vectors (3,NNodes)
+         Flines3(i) = m%ConnectList(9)%Ftot(i)  !Field: Force vectors (3,NNodes)
+         Flines4(i) = m%ConnectList(10)%Ftot(i)  !Field: Force vectors (3,NNodes)
 
    END DO
 
@@ -257,7 +262,36 @@ MODULE MoorDyn
    END SUBROUTINE FLines_OUT
    
    
+!=========================================   DisplayOUT   ===================================
+   !output to interface
+   SUBROUTINE DisplayOUT(m,Fairten1,Fairten2,Fairten3,Fairten4,BWFairten9,BWFairten10,AHTChainLength,BWChainLength)
+   
+   TYPE(MD_MiscVarType)          ,INTENT(INOUT) :: m           ! INTENT(INOUT)
+
+   REAL                         ,INTENT(  OUT)     :: Fairten1         !CHAIN 1 Fairten/KN
+   REAL                         ,INTENT(  OUT)     :: Fairten2         !CHAIN 2 Fairten/KN
+   REAL                         ,INTENT(  OUT)     :: Fairten3         !CHAIN 3 Fairten/KN
+   REAL                         ,INTENT(  OUT)     :: Fairten4         !CHAIN 4 Fairten/KN
+   REAL                         ,INTENT(  OUT)     :: BWFairten9       !BW CHAIN 9 Fairten/KN
+   REAL                         ,INTENT(  OUT)     :: BWFairten10      !BW CHAIN 10 Fairten/KN
+   
+   REAL(DbKi)                   ,INTENT(  OUT)     :: AHTChainLength   !AHT Chain Length/m
+   REAL(DbKi)                   ,INTENT(  OUT)     :: BWChainLength    !BW Chain Length/m
+
+
+   FAIRTEN1 = TwoNorm(m%ConnectList(1)%Ftot) / 1000
+   FAIRTEN2 = TwoNorm(m%ConnectList(2)%Ftot) / 1000  
+   FAIRTEN3 = TwoNorm(m%ConnectList(3)%Ftot) / 1000
+   FAIRTEN4 = TwoNorm(m%ConnectList(4)%Ftot) / 1000
+   BWFAIRTEN9 = TwoNorm(m%ConnectList(5)%Ftot)
+   BWFAIRTEN10 = TwoNorm(m%ConnectList(6)%Ftot)   
+   AHTChainLength = sum(m%LineList(1)%l)
+   BWChainLength = sum(m%LineList(6)%l)
+   
+   END SUBROUTINE DisplayOUT
   
+   
+   
    !=========================================   MD_Init   ===================================
    SUBROUTINE MD_Init(InitInp, u, p, x, xd, z, other, y, m, DTcoupling, InitOut, ErrStat, ErrMsg)
 
