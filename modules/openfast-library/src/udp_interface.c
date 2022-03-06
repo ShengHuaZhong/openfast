@@ -132,22 +132,41 @@ void send_gpgga_() {
     memset(send_buf, 0, send_buf_len);
     location_monitor_pack* pack_buf_ptr = &location_monitor_pack_buf[i];
     if (location_monitor_pack_buf[i].ship_ != NULL) {
-      a = proj_coord(pack_buf_ptr->base_point_x_ + pack_buf_ptr->ship_->surge_,
-                     pack_buf_ptr->base_point_y_ + pack_buf_ptr->ship_->sway_,
-                     0, 0);
+      // Openfast has no way to rotate, so rotate 135 degrees here
+      double x = pack_buf_ptr->ship_->surge_;
+      double y = pack_buf_ptr->ship_->sway_;
+
+      double tmp_x, tmp_y;
+
+      tmp_x = x * (-0.7071) + y * (-0.7071);
+      tmp_y = x * 0.7071 + y * (-0.7071);
+
+      x = pack_buf_ptr->base_point_x_ + tmp_x;
+      y = pack_buf_ptr->base_point_y_ + tmp_y;
+      printf("id:%d , x:%f, y:%f, surge:%f, sway:%f\n", i, x, y,
+             pack_buf_ptr->ship_->surge_, pack_buf_ptr->ship_->sway_);
+      a = proj_coord(x, y, 0, 0);
       b = proj_trans(P, PJ_INV, a);
     }
-    int send_len = snprintf(send_buf, send_buf_len,
-                            "$GPGGA,%s,%08.4f,N,%9.4f,E,1,04,24.4,19.7,M,,,,"
-                            "0000*1F\r\n",
-                            time_format, b.lp.phi * 100, b.lp.lam * 100);
+
+    int latitude_deg = floor(b.lp.phi);
+    double latitude_minute = (b.lp.phi - latitude_deg) * 60;
+    int longitude_deg = floor(b.lp.lam);
+    double longitude_minute = (b.lp.lam - longitude_deg) * 60;
+    int send_len =
+        snprintf(send_buf, send_buf_len,
+                 "$GPGGA,%s,%02d%6.4f,N,%03d%6.4f,E,1,04,24.4,19.7,M,,,,"
+                 "0000*1F\r\n",
+                 time_format, latitude_deg, latitude_minute, longitude_deg,
+                 longitude_minute);
     if (send_len > 0) {
       sendto(socket_fd, send_buf, send_len, 0,
              (struct sockaddr*)&pack_buf_ptr->addr_, socklen);
     }
 
-    send_len = snprintf(send_buf, send_buf_len, "$GPHDT,%f*1F\r\n",
-                        pack_buf_ptr->ship_->roll_);
+    send_len = snprintf(
+        send_buf, send_buf_len, "$GPHDT,%f*1F\r\n",
+        (pack_buf_ptr->ship_->yaw_ + 2.356194490192345) * 180 / 3.1415926);
     if (send_len > 0) {
       sendto(socket_fd, send_buf, send_len, 0,
              (struct sockaddr*)&pack_buf_ptr->addr_, socklen);
@@ -695,7 +714,7 @@ void read_profile_and_init(const char* filename) {
             location_monitor_pack_buf[i].base_point_y_ =
                 ship_base_y_json->valuedouble;
           }
-          location_monitor_pack_buf[i].ship_ = &ship_array[i];
+          location_monitor_pack_buf[i].ship_ = ship_array[i];
         }
       }
       //
