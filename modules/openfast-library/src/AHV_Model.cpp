@@ -107,8 +107,9 @@ string ReadLine(string filename, int line) {
 
   if (line <= 0) {
     fileload = 0;
-    // cout << "Error 1: �������󣬲���Ϊ0��������" <<
-    // endl;
+    // cout << "Error 1:
+    // �������󣬲���Ϊ0��������"
+    // << endl;
   }
 
   if (file.fail()) {
@@ -744,6 +745,8 @@ void AH_Model_v1ModelClass::step() {
   // Update absolute time of base rate at minor time step
   if (rtmIsMinorTimeStep((&AHV_Model_M))) {
     (&AHV_Model_M)->Timing.t[0] = rtsiGetT(&(&AHV_Model_M)->solverInfo);
+    // printf("AH_Model_v1ModelClass::step() %f\n",
+    // (&AHV_Model_M)->Timing.t[0]);
   }
 
   {
