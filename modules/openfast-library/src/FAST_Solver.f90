@@ -5705,38 +5705,7 @@ SUBROUTINE FAST_AdvanceStates( t_initial, n_t_global, p_FAST, m_FAST, ED, BD, Sr
    
    REAL(DbKi)                              :: t_module            ! Current simulation time for module 
    REAL(DbKi)                              :: t_global_next       ! Simulation time for computing outputs
-   REAL(ReKi), DIMENSION(6)                :: Ship1_Freedom
-   REAL(ReKi), DIMENSION(6)                :: Ship1_Velocity
-   REAL(ReKi), DIMENSION(6)                :: Ship2_Freedom
-   REAL(ReKi), DIMENSION(6)                :: Ship2_Velocity
-   REAL(ReKi), DIMENSION(6)                :: Ship3_Freedom
-   REAL(ReKi), DIMENSION(6)                :: Ship3_Velocity
-   REAL(ReKi), DIMENSION(6)                :: Ship4_Freedom
-   REAL(ReKi), DIMENSION(6)                :: Ship4_Velocity
-   REAL(ReKi), DIMENSION(3)                :: Ship1_Line_Force
-   REAL(ReKi), DIMENSION(3)                :: Ship2_Line_Force
-   REAL(ReKi), DIMENSION(3)                :: Ship3_Line_Force
-   REAL(ReKi), DIMENSION(3)                :: Ship4_Line_Force
 
-   TYPE(Ship_PID_Type)                     :: Ship1_Control_Order
-   TYPE(Ship_PID_Type)                     :: Ship2_Control_Order
-   TYPE(Ship_PID_Type)                     :: Ship3_Control_Order
-   TYPE(Ship_PID_Type)                     :: Ship4_Control_Order
-   REAL(ReKi)                              :: Wave_Direction
-   REAL(ReKi)                              :: Current_Direction
-   REAL(ReKi)                              :: Current_Speed
-   REAL(ReKi)                              :: Mean_Wave_Height
-   REAL(ReKi)                              :: Fairten1         !CHAIN 1 Fairten/KN
-   REAL(ReKi)                              :: Fairten2         !CHAIN 2 Fairten/KN
-   REAL(ReKi)                              :: Fairten3         !CHAIN 3 Fairten/KN
-   REAL(ReKi)                              :: Fairten4         !CHAIN 4 Fairten/KN
-   REAL(ReKi)                              :: BWFairten9       !BW CHAIN 9 Fairten/KN
-   REAL(ReKi)                              :: BWFairten10      !BW CHAIN 10 Fairten/KN
-   REAL(Reki)                              :: Winch1_Speed     ! Winch speed
-   REAL(Reki)                              :: Winch2_Speed     ! Winch speed
-   
-   REAL(DbKi):: AHTChainLength   !AHT Chain Length/m
-   REAL(DbKi):: BWChainLength    !BW Chain Length/m
 
 
    INTEGER(IntKi)                          :: j_ss                ! substep loop counter 
@@ -5999,37 +5968,7 @@ SUBROUTINE FAST_AdvanceStates( t_initial, n_t_global, p_FAST, m_FAST, ED, BD, Sr
          CALL SetErrStat( Errstat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )         
       CALL MD_CopyOtherState( MD%OtherSt(STATE_CURR), MD%OtherSt(STATE_PRED), MESH_UPDATECOPY, Errstat2, ErrMsg2)
          CALL SetErrStat( Errstat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )
-      !----------------------------------------------------------------------------------------
-      ! Update tug position and anchor cable length
-      !----------------------------------------------------------------------------------------
-         CALL update_ship_control(Ship1_Control_Order, Ship2_Control_Order, Ship3_Control_Order, Ship4_Control_Order)
-         CALL update_winch_order(5, Winch1_Speed)
-         CALL update_winch_order(6, Winch2_Speed)
-         CALL FLines_OUT(MD%m, MD%p, MD%y, Ship1_Line_Force, Ship2_Line_Force, Ship3_Line_Force, Ship4_Line_Force)
-
-         CALL shipsetfun1(Mean_Wave_Height, Ship1_Control_Order%keep_head, Wave_Direction, Current_Direction, Current_Speed, Ship1_Control_Order%keep_pos, &
-                          Ship1_Control_Order%Target_X, Ship1_Control_Order%Target_Y, Ship1_Control_Order%Target_HEAD,&
-                          Ship1_Line_Force)
-         CALL shipsetfun2(Ship2_Control_Order%keep_pos, Ship2_Control_Order%keep_head, Ship2_Control_Order%Target_X, Ship2_Control_Order%Target_Y, Ship2_Control_Order%Target_HEAD, Ship2_Line_Force)
-         CALL shipsetfun3(Ship3_Control_Order%keep_pos, Ship3_Control_Order%keep_head, Ship3_Control_Order%Target_X, Ship3_Control_Order%Target_Y, Ship3_Control_Order%Target_HEAD, Ship3_Line_Force)
-         CALL shipsetfun4(Ship4_Control_Order%keep_pos, Ship4_Control_Order%keep_head, Ship4_Control_Order%Target_X, Ship4_Control_Order%Target_Y, Ship4_Control_Order%Target_HEAD, Ship4_Line_Force)
-         
-         CALL shipsportfun1(p_FAST%Ship1_Surge, p_FAST%Ship1_Sway, p_FAST%Ship1_Heave, p_FAST%Ship1_Roll, p_FAST%Ship1_Pitch, p_FAST%Ship1_Yaw, Ship1_Freedom, Ship1_Velocity)
-         CALL shipsportfun2(p_FAST%Ship2_Surge, p_FAST%Ship2_Sway, p_FAST%Ship2_Heave, p_FAST%Ship2_Roll, p_FAST%Ship2_Pitch, p_FAST%Ship2_Yaw, Ship2_Freedom, Ship2_Velocity)
-         CALL shipsportfun3(p_FAST%Ship3_Surge, p_FAST%Ship3_Sway, p_FAST%Ship3_Heave, p_FAST%Ship3_Roll, p_FAST%Ship3_Pitch, p_FAST%Ship3_Yaw, Ship3_Freedom, Ship3_Velocity)
-         CALL shipsportfun4(p_FAST%Ship4_Surge, p_FAST%Ship4_Sway, p_FAST%Ship4_Heave, p_FAST%Ship4_Roll, p_FAST%Ship4_Pitch, p_FAST%Ship4_Yaw, Ship4_Freedom, Ship4_Velocity)
-         CALL send_tug_data(1, p_FAST%Ship1_Surge, p_FAST%Ship1_Sway, p_FAST%Ship1_Heave, p_FAST%Ship1_Roll, p_FAST%Ship1_Pitch, p_FAST%Ship1_Yaw);
-         CALL send_tug_data(2, p_FAST%Ship2_Surge, p_FAST%Ship2_Sway, p_FAST%Ship2_Heave, p_FAST%Ship2_Roll, p_FAST%Ship2_Pitch, p_FAST%Ship2_Yaw);
-         CALL send_tug_data(3, p_FAST%Ship3_Surge, p_FAST%Ship3_Sway, p_FAST%Ship3_Heave, p_FAST%Ship3_Roll, p_FAST%Ship3_Pitch, p_FAST%Ship3_Yaw);
-         CALL send_tug_data(4, p_FAST%Ship4_Surge, p_FAST%Ship4_Sway, p_FAST%Ship4_Heave, p_FAST%Ship4_Roll, p_FAST%Ship4_Pitch, p_FAST%Ship4_Yaw);
-        
-         CALL Set_Vessel_Freedom(MD%Input(1), MD%m, Ship1_Freedom, Ship1_Velocity, 7)
-         CALL Set_Vessel_Freedom( MD%Input(1),MD%m, Ship2_Freedom, Ship2_Velocity, 8)
-         CALL Set_Vessel_Freedom( MD%Input(1), MD%m,Ship3_Freedom, Ship3_Velocity, 9)
-         CALL Set_Vessel_Freedom( MD%Input(1), MD%m,Ship4_Freedom, Ship4_Velocity, 10)
-
-         CALL Set_Line_length(MD%m,p_FAST%DT, 5,Winch1_Speed)
-         CALL Set_Line_length(MD%m,p_FAST%DT, 6,Winch2_Speed)
+      
       DO j_ss = 1, p_FAST%n_substeps( Module_MD )
          n_t_module = n_t_global*p_FAST%n_substeps( Module_MD ) + j_ss - 1
          t_module   = n_t_module*p_FAST%dt_module( Module_MD ) + t_initial
@@ -6039,23 +5978,10 @@ SUBROUTINE FAST_AdvanceStates( t_initial, n_t_global, p_FAST, m_FAST, ED, BD, Sr
             CALL SetErrStat( Errstat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )
       END DO !j_ss
 
-     
-      CALL DisplayOUT(MD%m, Fairten1, Fairten2,&
-                      Fairten3, Fairten4, BWFairten9,&
-                      BWFairten10, AHTChainLength, BWChainLength)
-      CALL update_dispaly_pack(Fairten1, Fairten2,&
-                             Fairten3, Fairten4, BWFairten9,&
-                             BWFairten10, AHTChainLength, BWChainLength)
       DO I = 1, MD%p%NLines
          CALL send_line_node_pos(I, MD%m%LineList(I)%r, MD%m%LineList(I)%N+1)
       END DO
       
-         
-
-      Mean_Wave_Height            = 0
-      Wave_Direction              = 0
-      Current_Direction           = 0
-      Current_Speed               = 0
       
    ELSEIF (p_FAST%CompMooring == Module_FEAM) THEN
       CALL FEAM_CopyContState   (FEAM%x( STATE_CURR), FEAM%x( STATE_PRED), MESH_UPDATECOPY, Errstat2, ErrMsg2)

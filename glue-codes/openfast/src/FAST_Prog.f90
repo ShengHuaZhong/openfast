@@ -31,32 +31,64 @@ PROGRAM FAST
 !.................................................................................................
 
 
-USE FAST_Subs   ! all of the ModuleName and ModuleName_types modules are inherited from FAST_Subs
-                       
-IMPLICIT  NONE
-   
-   ! Local parameters:
-REAL(DbKi),             PARAMETER     :: t_initial = 0.0_DbKi                    ! Initial time
-INTEGER(IntKi),         PARAMETER     :: NumTurbines = 1                         ! Note that CalcSteady linearization analysis and WrVTK_Modes should be performed with only 1 turbine
-   
-   ! Other/Misc variables
-TYPE(FAST_TurbineType)                :: Turbine(NumTurbines)                    ! Data for each turbine instance
+   USE FAST_Subs   ! all of the ModuleName and ModuleName_types modules are inherited from FAST_Subs
 
-INTEGER(IntKi)                        :: i_turb                                  ! current turbine number
-INTEGER(IntKi)                        :: n_t_global                              ! simulation time step, loop counter for global (FAST) simulation
-INTEGER(IntKi)                        :: ErrStat                                 ! Error status
-CHARACTER(ErrMsgLen)                  :: ErrMsg                                  ! Error message
+   IMPLICIT  NONE
+
+   ! Local parameters:
+   REAL(DbKi),             PARAMETER     :: t_initial = 0.0_DbKi                    ! Initial time
+   INTEGER(IntKi),         PARAMETER     :: NumTurbines = 1                         ! Note that CalcSteady linearization analysis and WrVTK_Modes should be performed with only 1 turbine
+
+   ! Other/Misc variables
+   TYPE(FAST_TurbineType)                :: Turbine(NumTurbines)                    ! Data for each turbine instance
+
+   INTEGER(IntKi)                        :: i_turb                                  ! current turbine number
+   INTEGER(IntKi)                        :: n_t_global                              ! simulation time step, loop counter for global (FAST) simulation
+   INTEGER(IntKi)                        :: ErrStat                                 ! Error status
+   CHARACTER(ErrMsgLen)                  :: ErrMsg                                  ! Error message
 
    ! data for restart:
-CHARACTER(1000)                       :: InputFile                               ! String to hold the intput file name
-CHARACTER(1024)                       :: CheckpointRoot                          ! Rootname of the checkpoint file
-CHARACTER(20)                         :: FlagArg                                 ! flag argument from command line
-INTEGER(IntKi)                        :: Restart_step                            ! step to start on (for restart) 
+   CHARACTER(1000)                       :: InputFile                               ! String to hold the intput file name
+   CHARACTER(1024)                       :: CheckpointRoot                          ! Rootname of the checkpoint file
+   CHARACTER(20)                         :: FlagArg                                 ! flag argument from command line
+   INTEGER(IntKi)                        :: Restart_step                            ! step to start on (for restart)
 
+   REAL(ReKi), DIMENSION(6)                :: Ship1_Freedom
+   REAL(ReKi), DIMENSION(6)                :: Ship1_Velocity
+   REAL(ReKi), DIMENSION(6)                :: Ship2_Freedom
+   REAL(ReKi), DIMENSION(6)                :: Ship2_Velocity
+   REAL(ReKi), DIMENSION(6)                :: Ship3_Freedom
+   REAL(ReKi), DIMENSION(6)                :: Ship3_Velocity
+   REAL(ReKi), DIMENSION(6)                :: Ship4_Freedom
+   REAL(ReKi), DIMENSION(6)                :: Ship4_Velocity
+   REAL(ReKi), DIMENSION(3)                :: Ship1_Line_Force
+   REAL(ReKi), DIMENSION(3)                :: Ship2_Line_Force
+   REAL(ReKi), DIMENSION(3)                :: Ship3_Line_Force
+   REAL(ReKi), DIMENSION(3)                :: Ship4_Line_Force
 
-      !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-      ! determine if this is a restart from checkpoint
-      !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+   TYPE(Ship_PID_Type)                     :: Ship1_Control_Order
+   TYPE(Ship_PID_Type)                     :: Ship2_Control_Order
+   TYPE(Ship_PID_Type)                     :: Ship3_Control_Order
+   TYPE(Ship_PID_Type)                     :: Ship4_Control_Order
+   REAL(ReKi)                              :: Wave_Direction
+   REAL(ReKi)                              :: Current_Direction
+   REAL(ReKi)                              :: Current_Speed
+   REAL(ReKi)                              :: Mean_Wave_Height
+   REAL(ReKi)                              :: Fairten1         !CHAIN 1 Fairten/KN
+   REAL(ReKi)                              :: Fairten2         !CHAIN 2 Fairten/KN
+   REAL(ReKi)                              :: Fairten3         !CHAIN 3 Fairten/KN
+   REAL(ReKi)                              :: Fairten4         !CHAIN 4 Fairten/KN
+   REAL(ReKi)                              :: BWFairten9       !BW CHAIN 9 Fairten/KN
+   REAL(ReKi)                              :: BWFairten10      !BW CHAIN 10 Fairten/KN
+   REAL(Reki)                              :: Winch1_Speed     ! Winch speed
+   REAL(Reki)                              :: Winch2_Speed     ! Winch speed
+
+   REAL(DbKi):: AHTChainLength   !AHT Chain Length/m
+   REAL(DbKi):: BWChainLength    !BW Chain Length/m
+
+   !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+   ! determine if this is a restart from checkpoint
+   !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    CALL NWTC_Init() ! open console for writing
    ProgName = 'OpenFAST'
    InputFile = ""
@@ -66,144 +98,188 @@ INTEGER(IntKi)                        :: Restart_step                           
 
    IF ( TRIM(FlagArg) == 'RESTART' ) THEN ! Restart from checkpoint file
       CALL FAST_RestoreFromCheckpoint_Tary(t_initial, Restart_step, Turbine, CheckpointRoot, ErrStat, ErrMsg  )
-         CALL CheckError( ErrStat, ErrMsg, 'during restore from checkpoint'  )
-         
+      CALL CheckError( ErrStat, ErrMsg, 'during restore from checkpoint'  )
+
    ELSE IF ( TRIM(FlagArg) == 'VTKLIN' ) THEN ! Read checkpoint file to output linearization analysis, but don't continue time-marching
       CALL FAST_RestoreForVTKModeShape_Tary(t_initial, Turbine, CheckpointRoot, ErrStat, ErrMsg  )
-         CALL CheckError( ErrStat, ErrMsg, 'during restore from checkpoint for mode shapes'  )
+      CALL CheckError( ErrStat, ErrMsg, 'during restore from checkpoint for mode shapes'  )
 
       ! Note that this works only when NumTurbines==1 (we don't have files for each of the turbines...)
       Restart_step = Turbine(1)%p_FAST%n_TMax_m1 + 1
       CALL ExitThisProgram_T( Turbine(1), ErrID_None, .true., SkipRunTimeMsg = .TRUE. )
-      
+
    ELSEIF ( LEN( TRIM(FlagArg) ) > 0 ) THEN ! Any other flag, end normally
       CALL NormStop()
 
 
    ELSE
       Restart_step = 0
-      
+
       DO i_turb = 1,NumTurbines
          !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
          ! initialization
          !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-         
+
          CALL FAST_InitializeAll_T( t_initial, i_turb, Turbine(i_turb), ErrStat, ErrMsg )     ! bjj: we need to get the input files for each turbine (not necessarily the same one)
          CALL CheckError( ErrStat, ErrMsg, 'during module initialization' )
-                        
-      !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-      ! loose coupling
-      !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-      
+
+         !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+         ! loose coupling
+         !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
          !...............................................................................................................................
          ! Initialization: (calculate outputs based on states at t=t_initial as well as guesses of inputs and constraint states)
-         !...............................................................................................................................     
+         !...............................................................................................................................
          CALL FAST_Solution0_T( Turbine(i_turb), ErrStat, ErrMsg )
          CALL CheckError( ErrStat, ErrMsg, 'during simulation initialization'  )
-      
-         
+
+
          !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
          ! linearization (bjj: we want to call FAST_Linearize_T whenever WriteOutputToFile is called, but I'll put it at the driver level for now)
          !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-            ! if we need to do linarization analysis at t=0, do it at this operating point 
+         ! if we need to do linarization analysis at t=0, do it at this operating point
          CALL FAST_Linearize_T(t_initial, 0, Turbine(i_turb), ErrStat, ErrMsg)
-            CALL CheckError( ErrStat, ErrMsg  )
-         
-         
+         CALL CheckError( ErrStat, ErrMsg  )
+
+
       END DO
    END IF
-   
 
-      
+
+
    !...............................................................................................................................
    ! Time Stepping:
-   !...............................................................................................................................         
-   
-TIME_STEP_LOOP:  DO n_t_global = Restart_step, Turbine(1)%p_FAST%n_TMax_m1 
-      
+   !...............................................................................................................................
+
+   TIME_STEP_LOOP:  DO n_t_global = Restart_step, Turbine(1)%p_FAST%n_TMax_m1
+
       ! bjj: we have to make sure the n_TMax_m1 and n_ChkptTime are the same for all turbines or have some different logic here
-      
-      
+
+
       ! write checkpoint file if requested
       IF (mod(n_t_global, Turbine(1)%p_FAST%n_ChkptTime) == 0 .AND. Restart_step /= n_t_global .and. .not. Turbine(1)%m_FAST%Lin%FoundSteady) then
          CheckpointRoot = TRIM(Turbine(1)%p_FAST%OutFileRoot)//'.'//TRIM(Num2LStr(n_t_global))
-         
+
          CALL FAST_CreateCheckpoint_Tary(t_initial, n_t_global, Turbine, CheckpointRoot, ErrStat, ErrMsg)
-            IF(ErrStat >= AbortErrLev .and. AbortErrLev >= ErrID_Severe) THEN
-               ErrStat = MIN(ErrStat,ErrID_Severe) ! We don't need to stop simulation execution on this error
-               ErrMsg = TRIM(ErrMsg)//Newline//'WARNING: Checkpoint file could not be generated. Simulation continuing.'
-            END IF
-            CALL CheckError( ErrStat, ErrMsg  )
+         IF(ErrStat >= AbortErrLev .and. AbortErrLev >= ErrID_Severe) THEN
+            ErrStat = MIN(ErrStat,ErrID_Severe) ! We don't need to stop simulation execution on this error
+            ErrMsg = TRIM(ErrMsg)//Newline//'WARNING: Checkpoint file could not be generated. Simulation continuing.'
+         END IF
+         CALL CheckError( ErrStat, ErrMsg  )
       END IF
 
-      
+
       ! this takes data from n_t_global and gets values at n_t_global + 1
       DO i_turb = 1,NumTurbines
+         !----------------------------------------------------------------------------------------
+         ! Update tug position and anchor cable length
+         !----------------------------------------------------------------------------------------
+         CALL update_ship_control(Ship1_Control_Order, Ship2_Control_Order, Ship3_Control_Order, Ship4_Control_Order)
+         CALL update_winch_order(5, Winch1_Speed)
+         CALL update_winch_order(6, Winch2_Speed)
+         CALL FLines_OUT(Turbine(i_turb)%MD%m, Turbine(i_turb)%MD%p, Turbine(i_turb)%MD%y, Ship1_Line_Force, Ship2_Line_Force, Ship3_Line_Force, Ship4_Line_Force)
+
+         CALL shipsetfun1(Mean_Wave_Height, Ship1_Control_Order%keep_head, Wave_Direction, Current_Direction, Current_Speed, Ship1_Control_Order%keep_pos, &
+            Ship1_Control_Order%Target_X, Ship1_Control_Order%Target_Y, Ship1_Control_Order%Target_HEAD,&
+            Ship1_Line_Force)
+         CALL shipsetfun2(Ship2_Control_Order%keep_pos, Ship2_Control_Order%keep_head, Ship2_Control_Order%Target_X, Ship2_Control_Order%Target_Y, Ship2_Control_Order%Target_HEAD, Ship2_Line_Force)
+         CALL shipsetfun3(Ship3_Control_Order%keep_pos, Ship3_Control_Order%keep_head, Ship3_Control_Order%Target_X, Ship3_Control_Order%Target_Y, Ship3_Control_Order%Target_HEAD, Ship3_Line_Force)
+         CALL shipsetfun4(Ship4_Control_Order%keep_pos, Ship4_Control_Order%keep_head, Ship4_Control_Order%Target_X, Ship4_Control_Order%Target_Y, Ship4_Control_Order%Target_HEAD, Ship4_Line_Force)
+
+         CALL shipsportfun1(Turbine(i_turb)%p_FAST%Ship1_Surge, Turbine(i_turb)%p_FAST%Ship1_Sway, Turbine(i_turb)%p_FAST%Ship1_Heave, Turbine(i_turb)%p_FAST%Ship1_Roll, Turbine(i_turb)%p_FAST%Ship1_Pitch, Turbine(i_turb)%p_FAST%Ship1_Yaw, Ship1_Freedom, Ship1_Velocity)
+         CALL shipsportfun2(Turbine(i_turb)%p_FAST%Ship2_Surge, Turbine(i_turb)%p_FAST%Ship2_Sway, Turbine(i_turb)%p_FAST%Ship2_Heave, Turbine(i_turb)%p_FAST%Ship2_Roll, Turbine(i_turb)%p_FAST%Ship2_Pitch, Turbine(i_turb)%p_FAST%Ship2_Yaw, Ship2_Freedom, Ship2_Velocity)
+         CALL shipsportfun3(Turbine(i_turb)%p_FAST%Ship3_Surge, Turbine(i_turb)%p_FAST%Ship3_Sway, Turbine(i_turb)%p_FAST%Ship3_Heave, Turbine(i_turb)%p_FAST%Ship3_Roll, Turbine(i_turb)%p_FAST%Ship3_Pitch, Turbine(i_turb)%p_FAST%Ship3_Yaw, Ship3_Freedom, Ship3_Velocity)
+         CALL shipsportfun4(Turbine(i_turb)%p_FAST%Ship4_Surge, Turbine(i_turb)%p_FAST%Ship4_Sway, Turbine(i_turb)%p_FAST%Ship4_Heave, Turbine(i_turb)%p_FAST%Ship4_Roll, Turbine(i_turb)%p_FAST%Ship4_Pitch, Turbine(i_turb)%p_FAST%Ship4_Yaw, Ship4_Freedom, Ship4_Velocity)
+         CALL send_tug_data(1, Turbine(i_turb)%p_FAST%Ship1_Surge, Turbine(i_turb)%p_FAST%Ship1_Sway, Turbine(i_turb)%p_FAST%Ship1_Heave, Turbine(i_turb)%p_FAST%Ship1_Roll, Turbine(i_turb)%p_FAST%Ship1_Pitch, Turbine(i_turb)%p_FAST%Ship1_Yaw);
+         CALL send_tug_data(2, Turbine(i_turb)%p_FAST%Ship2_Surge, Turbine(i_turb)%p_FAST%Ship2_Sway, Turbine(i_turb)%p_FAST%Ship2_Heave, Turbine(i_turb)%p_FAST%Ship2_Roll, Turbine(i_turb)%p_FAST%Ship2_Pitch, Turbine(i_turb)%p_FAST%Ship2_Yaw);
+         CALL send_tug_data(3, Turbine(i_turb)%p_FAST%Ship3_Surge, Turbine(i_turb)%p_FAST%Ship3_Sway, Turbine(i_turb)%p_FAST%Ship3_Heave, Turbine(i_turb)%p_FAST%Ship3_Roll, Turbine(i_turb)%p_FAST%Ship3_Pitch, Turbine(i_turb)%p_FAST%Ship3_Yaw);
+         CALL send_tug_data(4, Turbine(i_turb)%p_FAST%Ship4_Surge, Turbine(i_turb)%p_FAST%Ship4_Sway, Turbine(i_turb)%p_FAST%Ship4_Heave, Turbine(i_turb)%p_FAST%Ship4_Roll, Turbine(i_turb)%p_FAST%Ship4_Pitch, Turbine(i_turb)%p_FAST%Ship4_Yaw);
+
+         CALL Set_Vessel_Freedom( Turbine(i_turb)%MD%Input(1), Turbine(i_turb)%MD%m, Ship1_Freedom, Ship1_Velocity, 7)
+         CALL Set_Vessel_Freedom( Turbine(i_turb)%MD%Input(1), Turbine(i_turb)%MD%m, Ship2_Freedom, Ship2_Velocity, 8)
+         CALL Set_Vessel_Freedom( Turbine(i_turb)%MD%Input(1), Turbine(i_turb)%MD%m, Ship3_Freedom, Ship3_Velocity, 9)
+         CALL Set_Vessel_Freedom( Turbine(i_turb)%MD%Input(1), Turbine(i_turb)%MD%m, Ship4_Freedom, Ship4_Velocity, 10)
+
+         CALL Set_Line_length(Turbine(i_turb)%MD%m,Turbine(i_turb)%p_FAST%DT, 5,Winch1_Speed)
+         CALL Set_Line_length(Turbine(i_turb)%MD%m,Turbine(i_turb)%p_FAST%DT, 6,Winch2_Speed)
 
          CALL FAST_Solution_T( t_initial, n_t_global, Turbine(i_turb), ErrStat, ErrMsg )
-            CALL CheckError( ErrStat, ErrMsg  )
-                                   
-            
-            ! if we need to do linarization analysis, do it at this operating point (which is now n_t_global + 1) 
-            ! put this at the end of the loop so that we can output linearization analysis at last OP if desired
+         CALL CheckError( ErrStat, ErrMsg  )
+
+         CALL DisplayOUT(Turbine(i_turb)%MD%m, Fairten1, Fairten2,&
+            Fairten3, Fairten4, BWFairten9,&
+            BWFairten10, AHTChainLength, BWChainLength)
+         CALL update_dispaly_pack(Fairten1, Fairten2,&
+            Fairten3, Fairten4, BWFairten9,&
+            BWFairten10, AHTChainLength, BWChainLength)
+
+
+
+
+         Mean_Wave_Height            = 0
+         Wave_Direction              = 0
+         Current_Direction           = 0
+         Current_Speed               = 0
+         ! if we need to do linarization analysis, do it at this operating point (which is now n_t_global + 1)
+         ! put this at the end of the loop so that we can output linearization analysis at last OP if desired
          CALL FAST_Linearize_T(t_initial, n_t_global+1, Turbine(i_turb), ErrStat, ErrMsg)
-            CALL CheckError( ErrStat, ErrMsg  )
-            
+         CALL CheckError( ErrStat, ErrMsg  )
+
          IF ( Turbine(i_turb)%m_FAST%Lin%FoundSteady) EXIT TIME_STEP_LOOP
       END DO
 
    END DO TIME_STEP_LOOP ! n_t_global
-  
+
    DO i_turb = 1,NumTurbines
       if ( Turbine(i_turb)%p_FAST%CalcSteady .and. .not. Turbine(i_turb)%m_FAST%Lin%FoundSteady) then
          CALL CheckError( ErrID_Fatal, "Unable to find steady-state solution." )
       end if
-  END DO
-  
+   END DO
+
    !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    !  Write simulation times and stop
    !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-   
+
    DO i_turb = 1,NumTurbines
       CALL ExitThisProgram_T( Turbine(i_turb), ErrID_None, i_turb==NumTurbines )
    END DO
-   
+
 
 CONTAINS
    !...............................................................................................................................
    SUBROUTINE CheckError(ErrID,Msg,ErrLocMsg)
-   ! This subroutine sets the error message and level and cleans up if the error is >= AbortErrLev
-   !...............................................................................................................................
+      ! This subroutine sets the error message and level and cleans up if the error is >= AbortErrLev
+      !...............................................................................................................................
 
-         ! Passed arguments
+      ! Passed arguments
       INTEGER(IntKi), INTENT(IN)           :: ErrID       ! The error identifier (ErrStat)
       CHARACTER(*),   INTENT(IN)           :: Msg         ! The error message (ErrMsg)
       CHARACTER(*),   INTENT(IN), OPTIONAL :: ErrLocMsg   ! an optional message describing the location of the error
 
-      CHARACTER(1024)                      :: SimMsg      
+      CHARACTER(1024)                      :: SimMsg
       integer(IntKi)                       :: i_turb2
-      
-      
+
+
       IF ( ErrID /= ErrID_None ) THEN
          CALL WrScr( NewLine//TRIM(Msg)//NewLine )
-         
+
          IF ( ErrID >= AbortErrLev ) THEN
             IF (PRESENT(ErrLocMsg)) THEN
                SimMsg = ErrLocMsg
             ELSE
                SimMsg = 'at simulation time '//TRIM(Num2LStr(Turbine(1)%m_FAST%t_global))//' of '//TRIM(Num2LStr(Turbine(1)%p_FAST%TMax))//' seconds'
             END IF
-            
+
             DO i_turb2 = 1,NumTurbines
                CALL ExitThisProgram_T( Turbine(i_turb2), ErrID, i_turb2==NumTurbines, SimMsg )
             END DO
-                        
+
          END IF
-         
+
       END IF
 
 
-   END SUBROUTINE CheckError   
+   END SUBROUTINE CheckError
    !...............................................................................................................................
 END PROGRAM FAST
 !=======================================================================
