@@ -4984,6 +4984,9 @@ SUBROUTINE FAST_Solution(t_initial, n_t_global, p_FAST, y_FAST, m_FAST, ED, BD, 
          !PRINT *, "ASDFSDFASDF ", p_FAST%Ship3_Surge, p_FAST%Ship3_Sway
          !PRINT *, "ASDDDDFADDF ", p_FAST%Ship4_Surge, p_FAST%Ship4_Sway
          CALL send_display_data(n_t_global_next)
+         
+      ENDIF
+      IF ( MOD( n_t_global_next, p_FAST%n_SttsTime*2 ) == 0 ) THEN
          CALL send_GPGGA()
       ENDIF
    ENDIF
