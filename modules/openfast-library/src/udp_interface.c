@@ -1,3 +1,4 @@
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <quadmath.h>
@@ -5,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
@@ -76,7 +78,10 @@ static int socket_fd = 0;
 static struct sockaddr_in server_addr;
 static struct sockaddr_in remote_addr;
 static struct sockaddr_in display_remote_addr;
+static struct sockaddr_in director_addr;
 static location_monitor_pack location_monitor_pack_buf[5];
+
+static int tcp_socket_fd = 0;
 
 static ship_pid ship1;
 static ship_pid ship2;
@@ -90,6 +95,7 @@ static six_freedom platform_freedom;
 static display_pack pack;
 static winch_control_order winch1;
 static winch_control_order winch2;
+static int epoll_fd;
 static sea_env env;
 static PJ_CONTEXT* C;
 static PJ* P;
@@ -143,8 +149,8 @@ void send_gpgga_() {
 
       x = pack_buf_ptr->base_point_x_ + tmp_x;
       y = pack_buf_ptr->base_point_y_ + tmp_y;
-      printf("id:%d , x:%f, y:%f, surge:%f, sway:%f\n", i, x, y,
-             pack_buf_ptr->ship_->surge_, pack_buf_ptr->ship_->sway_);
+      // printf("id:%d , x:%f, y:%f, surge:%f, sway:%f\n", i, x, y,
+      //        pack_buf_ptr->ship_->surge_, pack_buf_ptr->ship_->sway_);
       a = proj_coord(x, y, 0, 0);
       b = proj_trans(P, PJ_INV, a);
     }
@@ -199,19 +205,56 @@ int init_socket_() {
   init_ship(&ship3);
   init_ship(&ship4);
   printf("socket !\n");
-  int ret = 0;
-  socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
 
-  memset(&server_addr, 0, sizeof(struct sockaddr_in));
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-  server_addr.sin_port = htons(9000);
-  ret = bind(socket_fd, (struct sockaddr*)&server_addr,
-             sizeof(struct sockaddr_in));
+  epoll_fd = epoll_create(1024);
+
+  int ret = 0;
+
+  {
+    socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    memset(&server_addr, 0, sizeof(struct sockaddr_in));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    server_addr.sin_port = htons(9000);
+    ret = bind(socket_fd, (struct sockaddr*)&server_addr,
+               sizeof(struct sockaddr_in));
+    struct epoll_event event;
+    event.events = EPOLLIN | EPOLLET;
+    event.data.fd = socket_fd;
+    int ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_fd, &event);
+    if (ret != 0) {
+      printf("%s:%d epoll_ctl return value:%d\n", __FILE__, __LINE__, ret);
+    }
+  }
+
   read_profile_and_init("profile.json");
   if (ret < 0) {
     printf("socket bind fail!\n");
     return -1;
+  }
+
+  // Initialize the connection with TCP
+  {
+    tcp_socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    memset(&server_addr, 0, sizeof(struct sockaddr_in));
+    struct sockaddr_in tcp_local_addr;
+    tcp_local_addr.sin_family = AF_INET;
+    tcp_local_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    tcp_local_addr.sin_port = htons(4527);
+    // bind(tcp_socket_fd, (struct sockaddr*)&tcp_local_addr,
+    //      sizeof(struct sockaddr_in));
+
+    socklen_t sock_len = sizeof(struct sockaddr_in);
+    int ret =
+        connect(tcp_socket_fd, (struct sockaddr*)&director_addr, sock_len);
+
+    struct epoll_event event;
+    event.events = EPOLLIN | EPOLLET;
+    event.data.fd = tcp_socket_fd;
+    ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, tcp_socket_fd, &event);
+    if (ret != 0) {
+      printf("%s:%d epoll_ctl return value:%d\n", __FILE__, __LINE__, ret);
+    }
   }
 
   // init proj
@@ -349,7 +392,8 @@ void send_line_length_(int* id, double* len) {
 }
 
 void* recv_data_(void* args) {
-  char buf[4096];
+  const int pack_buf_len = 4096;
+  char buf[pack_buf_len];
   struct sockaddr_in client_addres;
   socklen_t socklen = 0;
   ship_pid* ships[4];
@@ -362,130 +406,154 @@ void* recv_data_(void* args) {
   winchs[0] = &winch1;
   winchs[1] = &winch2;
 
+  const int max_event_num = 1024;
+  struct epoll_event events[max_event_num];
+  memset(events, 0, sizeof(struct epoll_event) * max_event_num);
+
   if (socket_fd > 0)
     while (1) {
+      int recv_size = 0;
+
+      int fds = epoll_wait(epoll_fd, events, max_event_num, -1);
       memset(buf, 0, 4096);
-      int recv_size = recvfrom(socket_fd, buf, 4096, 0,
-                               (struct sockaddr*)&client_addres, &socklen);
-      if (recv_size > 2) {
-        cJSON* packet_json = cJSON_Parse(buf);
-        if (packet_json == NULL) {
-          printf("JSON parse fail\n");
-          continue;
-        }
-
-        cJSON* type_json = cJSON_GetObjectItem(packet_json, "type");
-        // printf("\ttype  :%d\n", type_json->valueint);
-        if (type_json != NULL) {
-          const int packet_type = type_json->valueint;
-          if (packet_type == SHIP_PID_PACKET) {
-            cJSON* ship_id = cJSON_GetObjectItem(packet_json, "ship_id");
-            if (ship_id == NULL) {
-              printf("Don't have field (ship_id)\n");
-              continue;
+      for (int i = 0; i < fds; ++i) {
+        int fd = events[i].data.fd;
+        if (events[i].events & EPOLLIN == EPOLLIN) {
+          if (fd == tcp_socket_fd) {
+            int pack_len = 0;
+            read(fd, &pack_len, 4);
+            printf("TCP data received, packet length %d\n", pack_len);
+            if (pack_len < pack_buf_len) {
+              recv_size = read(fd, buf, pack_len);
             }
-            cJSON* keep_pos_json = cJSON_GetObjectItem(packet_json, "keep_pos");
-            if (keep_pos_json == NULL) {
-              printf("Don't have field (keep_pos)\n");
-              continue;
-            }
-            cJSON* keep_head_json =
-                cJSON_GetObjectItem(packet_json, "keep_head");
-            if (keep_head_json == NULL) {
-              printf("Don't have field (keep_head)\n");
-              continue;
-            }
-            cJSON* target_x_json = cJSON_GetObjectItem(packet_json, "target_x");
-            if (target_x_json == NULL) {
-              printf("Don't have field (target_x)\n");
-              continue;
-            }
-            cJSON* target_y_json = cJSON_GetObjectItem(packet_json, "target_y");
-            if (target_y_json == NULL) {
-              printf("Don't have field (target_y)\n");
-              continue;
-            }
-            cJSON* target_head_json =
-                cJSON_GetObjectItem(packet_json, "target_head");
-            if (target_head_json == NULL) {
-              printf("Don't have field (target_head)\n");
-              continue;
-            }
-
-            if (ship_id->valueint > 0 && ship_id->valueint < 5) {
-              const int ship_index = ship_id->valueint - 1;
-              ships[ship_index]->keep_pos_ = keep_pos_json->valueint;
-              ships[ship_index]->kepp_head_ = keep_head_json->valueint;
-              ships[ship_index]->target_x_ = target_x_json->valuedouble;
-              ships[ship_index]->target_y_ = target_y_json->valuedouble;
-              ships[ship_index]->target_head_ = target_head_json->valuedouble;
-              printf("\t\tship_id      : %d\n", ship_id->valueint);
-              debug_ship_pid_(ships[ship_index]);
-            }
-          } else if (packet_type == WINCH_CONTROL_ORDER_PACKET) {
-            cJSON* winch_id = cJSON_GetObjectItem(packet_json, "winch_id");
-            if (winch_id == NULL) {
-              printf("Don't have field (winch_id)\n");
-              continue;
-            }
-            cJSON* winch_speed_json =
-                cJSON_GetObjectItem(packet_json, "winch_speed");
-            if (winch_speed_json == NULL) {
-              printf("Don't have field (winch_speed)\n");
-              continue;
-            }
-            cJSON* winch_order_json =
-                cJSON_GetObjectItem(packet_json, "winch_order");
-            if (winch_order_json == NULL) {
-              printf("Don't have field (winch_order)\n");
-              continue;
-            }
-            if (winch_id->valueint >= 0 && winch_id->valueint < 2) {
-              winchs[winch_id->valueint]->order_ =
-                  winch_order_json->valuedouble;
-              winchs[winch_id->valueint]->winch_speed_ =
-                  winch_speed_json->valuedouble;
-              // debug_winch_order(winchs[winch_id->valueint]);
-            }
-          } else if (packet_type == SEA_ENV_PACKET) {
-            cJSON* wave_height_json =
-                cJSON_GetObjectItem(packet_json, "wave_height");
-            if (wave_height_json == NULL) {
-              printf("Don't have field (wave_height)\n");
-              continue;
-            }
-            cJSON* wave_direction_json =
-                cJSON_GetObjectItem(packet_json, "wave_direction");
-            if (wave_direction_json == NULL) {
-              printf("Don't have field (wave_direction)\n");
-              continue;
-            }
-            cJSON* current_direction_json =
-                cJSON_GetObjectItem(packet_json, "current_direction");
-            if (current_direction_json == NULL) {
-              printf("Don't have field (current_direction)\n");
-              continue;
-            }
-            cJSON* current_speed_json =
-                cJSON_GetObjectItem(packet_json, "current_speed");
-            if (current_speed_json == NULL) {
-              printf("Don't have field (current_speed)\n");
-              continue;
-            }
-
-            env.current_direction_ = current_direction_json->valuedouble;
-            env.current_speed_ = current_speed_json->valuedouble;
-            env.wave_direction_ = wave_direction_json->valuedouble;
-            env.wave_height_ = wave_height_json->valuedouble;
+          } else if (fd == socket_fd) {
+            recv_size = recvfrom(socket_fd, buf, 4096, 0,
+                                 (struct sockaddr*)&client_addres, &socklen);
           }
-        } else {
-          printf("No type field exists\n");
         }
-        cJSON_Delete(packet_json);
+
+        if (recv_size > 2) {
+          cJSON* packet_json = cJSON_Parse(buf);
+          if (packet_json == NULL) {
+            printf("JSON parse fail\n");
+            continue;
+          }
+
+          cJSON* type_json = cJSON_GetObjectItem(packet_json, "type");
+          // printf("\ttype  :%d\n", type_json->valueint);
+          if (type_json != NULL) {
+            const int packet_type = type_json->valueint;
+            if (packet_type == SHIP_PID_PACKET) {
+              cJSON* ship_id = cJSON_GetObjectItem(packet_json, "ship_id");
+              if (ship_id == NULL) {
+                printf("Don't have field (ship_id)\n");
+                continue;
+              }
+              cJSON* keep_pos_json =
+                  cJSON_GetObjectItem(packet_json, "keep_pos");
+              if (keep_pos_json == NULL) {
+                printf("Don't have field (keep_pos)\n");
+                continue;
+              }
+              cJSON* keep_head_json =
+                  cJSON_GetObjectItem(packet_json, "keep_head");
+              if (keep_head_json == NULL) {
+                printf("Don't have field (keep_head)\n");
+                continue;
+              }
+              cJSON* target_x_json =
+                  cJSON_GetObjectItem(packet_json, "target_x");
+              if (target_x_json == NULL) {
+                printf("Don't have field (target_x)\n");
+                continue;
+              }
+              cJSON* target_y_json =
+                  cJSON_GetObjectItem(packet_json, "target_y");
+              if (target_y_json == NULL) {
+                printf("Don't have field (target_y)\n");
+                continue;
+              }
+              cJSON* target_head_json =
+                  cJSON_GetObjectItem(packet_json, "target_head");
+              if (target_head_json == NULL) {
+                printf("Don't have field (target_head)\n");
+                continue;
+              }
+
+              if (ship_id->valueint > 0 && ship_id->valueint < 5) {
+                const int ship_index = ship_id->valueint - 1;
+                ships[ship_index]->keep_pos_ = keep_pos_json->valueint;
+                ships[ship_index]->kepp_head_ = keep_head_json->valueint;
+                ships[ship_index]->target_x_ = target_x_json->valuedouble;
+                ships[ship_index]->target_y_ = target_y_json->valuedouble;
+                ships[ship_index]->target_head_ = target_head_json->valuedouble;
+                printf("\t\tship_id      : %d\n", ship_id->valueint);
+                debug_ship_pid_(ships[ship_index]);
+              }
+            } else if (packet_type == WINCH_CONTROL_ORDER_PACKET) {
+              cJSON* winch_id = cJSON_GetObjectItem(packet_json, "winch_id");
+              if (winch_id == NULL) {
+                printf("Don't have field (winch_id)\n");
+                continue;
+              }
+              cJSON* winch_speed_json =
+                  cJSON_GetObjectItem(packet_json, "winch_speed");
+              if (winch_speed_json == NULL) {
+                printf("Don't have field (winch_speed)\n");
+                continue;
+              }
+              cJSON* winch_order_json =
+                  cJSON_GetObjectItem(packet_json, "winch_order");
+              if (winch_order_json == NULL) {
+                printf("Don't have field (winch_order)\n");
+                continue;
+              }
+              if (winch_id->valueint >= 0 && winch_id->valueint < 2) {
+                winchs[winch_id->valueint]->order_ =
+                    winch_order_json->valuedouble;
+                winchs[winch_id->valueint]->winch_speed_ =
+                    winch_speed_json->valuedouble;
+                // debug_winch_order(winchs[winch_id->valueint]);
+              }
+            } else if (packet_type == SEA_ENV_PACKET) {
+              cJSON* wave_height_json =
+                  cJSON_GetObjectItem(packet_json, "wave_height");
+              if (wave_height_json == NULL) {
+                printf("Don't have field (wave_height)\n");
+                continue;
+              }
+              cJSON* wave_direction_json =
+                  cJSON_GetObjectItem(packet_json, "wave_direction");
+              if (wave_direction_json == NULL) {
+                printf("Don't have field (wave_direction)\n");
+                continue;
+              }
+              cJSON* current_direction_json =
+                  cJSON_GetObjectItem(packet_json, "current_direction");
+              if (current_direction_json == NULL) {
+                printf("Don't have field (current_direction)\n");
+                continue;
+              }
+              cJSON* current_speed_json =
+                  cJSON_GetObjectItem(packet_json, "current_speed");
+              if (current_speed_json == NULL) {
+                printf("Don't have field (current_speed)\n");
+                continue;
+              }
+
+              env.current_direction_ = current_direction_json->valuedouble;
+              env.current_speed_ = current_speed_json->valuedouble;
+              env.wave_direction_ = wave_direction_json->valuedouble;
+              env.wave_height_ = wave_height_json->valuedouble;
+            }
+          } else {
+            printf("No type field exists\n");
+          }
+          cJSON_Delete(packet_json);
+        }
       }
     }
 }
-
 void update_winch_order_(int* id, double* winch_speed) {
   if (id == NULL || winch_speed == NULL) {
     return;
@@ -768,9 +836,36 @@ void read_profile_and_init(const char* filename) {
         remote_addr.sin_port = htons(remote_network_port->valueint);
         printf("\t\t\t%d\n", remote_network_port->valueint);
       }
+
+      //
+      memset(&director_addr, 0, sizeof(director_addr));
+      director_addr.sin_family = AF_INET;
+      cJSON* director_network_address =
+          cJSON_GetObjectItem(profile_json_root, "director_network");
+      if (director_network_address == NULL) {
+        printf(
+            "\tMissing field from reading profile file: "
+            "(director_network), using 127.0.0.1\n");
+        director_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+      } else {
+        director_addr.sin_addr.s_addr =
+            inet_addr(director_network_address->valuestring);
+      }
+      cJSON* director_port =
+          cJSON_GetObjectItem(profile_json_root, "director_port");
+      if (director_port == NULL) {
+        printf(
+            "\tMissing field from reading profile file: "
+            "(director_port), using 9000\n");
+        director_addr.sin_port = htons(9000);
+      } else {
+        director_addr.sin_port = htons(director_port->valueint);
+      }
+
     } else {
       printf(
-          "\t The content of the profile file does not conform to JSON format "
+          "\t The content of the profile file does not conform to JSON "
+          "format "
           "\n");
       exit(-1);
     }
