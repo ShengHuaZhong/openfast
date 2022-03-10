@@ -60,6 +60,7 @@ add_library(openfast_postlib
   src/rtGetNaN.cpp
   src/Wave_loads.cpp
   src/Wave.cpp
+  src/log.c
   )
 target_link_libraries(openfast_postlib openfast_prelib quadmath scdataexlib foamfastlib versioninfolib ${PROJ_LIBRARIES} ${CJSON_LIBRARIES})
 

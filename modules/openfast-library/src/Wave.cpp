@@ -3,9 +3,9 @@
 //
 // Code generated for Simulink model 'AHV_Model'.
 //
-// Model version                  : 1.4920
+// Model version                  : 1.5458
 // Simulink Coder version         : 9.3 (R2020a) 18-Nov-2019
-// C/C++ source code generated on : Mon Jan 24 13:06:33 2022
+// C/C++ source code generated on : Tue Mar  8 16:53:12 2022
 //
 // Target selection: ert.tlc
 // Embedded hardware selection: Intel->x86-64 (Windows64)
@@ -48,7 +48,7 @@ real_T rt_remd_snf(real_T u0, real_T u1)
   return y;
 }
 
-// Function for MATLAB Function: '<S14>/Wave'
+// Function for MATLAB Function: '<S16>/Wave'
 real_T AH_Model_v1ModelClass::AHV_Model_rad2pipi2(real_T angle)
 {
   real_T y;
@@ -215,7 +215,7 @@ void AH_Model_v1ModelClass::AHV_Mo_emxEnsureCapacity_real_T
   }
 }
 
-// Function for MATLAB Function: '<S14>/Wave'
+// Function for MATLAB Function: '<S16>/Wave'
 real_T AH_Model_v1ModelClass::AHV_Model_sum(const real_T x_data[], const int32_T
   x_size[2])
 {
@@ -233,7 +233,7 @@ real_T AH_Model_v1ModelClass::AHV_Model_sum(const real_T x_data[], const int32_T
   return y;
 }
 
-// Function for MATLAB Function: '<S14>/Wave'
+// Function for MATLAB Function: '<S16>/Wave'
 void AH_Model_v1ModelClass::AHV_Model_gamma(real_T *x)
 {
   real_T n;
@@ -315,7 +315,7 @@ void AH_Model_v1ModelClass::AHV_Model_gamma(real_T *x)
   }
 }
 
-// Function for MATLAB Function: '<S14>/Wave'
+// Function for MATLAB Function: '<S16>/Wave'
 void AH_Model_v1ModelClass::AHV_Model_power(const real_T a_data[], const int32_T
   a_size[2], real_T y_data[], int32_T y_size[2])
 {
@@ -338,7 +338,7 @@ void AH_Model_v1ModelClass::AHV_Model_power(const real_T a_data[], const int32_T
   }
 }
 
-// Function for MATLAB Function: '<S14>/Wave'
+// Function for MATLAB Function: '<S16>/Wave'
 void AH_Model_v1ModelClass::AHV_Model_exp(real_T x_data[], const int32_T x_size
   [2])
 {
@@ -348,8 +348,8 @@ void AH_Model_v1ModelClass::AHV_Model_exp(real_T x_data[], const int32_T x_size
   }
 }
 
-// Function for MATLAB Function: '<S14>/Wave'
-void AH_Model_v1ModelClass::AHV_Model_power_ky(const real_T a_data[], const
+// Function for MATLAB Function: '<S16>/Wave'
+void AH_Model_v1ModelClass::AHV_Model_power_pn(const real_T a_data[], const
   int32_T a_size[2], real_T b, real_T y_data[], int32_T y_size[2])
 {
   real_T z1_data[127];
@@ -371,8 +371,8 @@ void AH_Model_v1ModelClass::AHV_Model_power_ky(const real_T a_data[], const
   }
 }
 
-// Function for MATLAB Function: '<S14>/Wave'
-void AH_Model_v1ModelClass::AHV_Model_power_k(real_T a, const real_T b_data[],
+// Function for MATLAB Function: '<S16>/Wave'
+void AH_Model_v1ModelClass::AHV_Model_power_p(real_T a, const real_T b_data[],
   const int32_T b_size[2], real_T y_data[], int32_T y_size[2])
 {
   real_T z1_data[127];
@@ -408,7 +408,7 @@ void AH_Model_v1ModelClass::AHV_Model_emxFree_real_T(emxArray_real_T_AHV_Model_T
   }
 }
 
-// Function for MATLAB Function: '<S14>/Wave'
+// Function for MATLAB Function: '<S16>/Wave'
 void AH_Model_v1ModelClass::AHV_Model_torset_spec(real_T Hs, real_T wo, const
   real_T omg_data[], const int32_T omg_size[2], real_T S_data[], int32_T *S_size)
 {
@@ -785,7 +785,7 @@ void AH_Model_v1ModelClass::AHV_Model_torset_spec(real_T Hs, real_T wo, const
 
     tps = -(rps / 4.0);
     g_args *= epsu;
-    AHV_Model_power_ky(y_tmp->data, y_tmp->size, -mw, tmp_data, tmp_size);
+    AHV_Model_power_pn(y_tmp->data, y_tmp->size, -mw, tmp_data, tmp_size);
     b_S_size[0] = 1;
     b_S_size[1] = tmp_size[1];
     loop_ub = tmp_size[0] * tmp_size[1];
@@ -794,7 +794,7 @@ void AH_Model_v1ModelClass::AHV_Model_torset_spec(real_T Hs, real_T wo, const
     }
 
     AHV_Model_exp(b_S_data, b_S_size);
-    AHV_Model_power_ky(b_y_tmp->data, b_y_tmp->size, -4.0, tmp_data, tmp_size);
+    AHV_Model_power_pn(b_y_tmp->data, b_y_tmp->size, -4.0, tmp_data, tmp_size);
     fnw_size[0] = 1;
     fnw_size[1] = tmp_size[1];
     loop_ub = tmp_size[0] * tmp_size[1];
@@ -803,11 +803,11 @@ void AH_Model_v1ModelClass::AHV_Model_torset_spec(real_T Hs, real_T wo, const
     }
 
     AHV_Model_exp(fnw_data, fnw_size);
-    AHV_Model_power_ky(y_tmp->data, y_tmp->size, -rps, tmp_data, tmp_size);
-    AHV_Model_power_k(g_argw, ftest1_data, ftest1_size, tmp_data_0, y_tmp_size);
-    AHV_Model_power_ky(b_y_tmp->data, b_y_tmp->size, -rps, ftest1_data,
+    AHV_Model_power_pn(y_tmp->data, y_tmp->size, -rps, tmp_data, tmp_size);
+    AHV_Model_power_p(g_argw, ftest1_data, ftest1_size, tmp_data_0, y_tmp_size);
+    AHV_Model_power_pn(b_y_tmp->data, b_y_tmp->size, -rps, ftest1_data,
                        y_tmp_size);
-    AHV_Model_power_k(tf, f_data, f_size, tmp_data_1, y_tmp_size);
+    AHV_Model_power_p(tf, f_data, f_size, tmp_data_1, y_tmp_size);
     loop_ub = tmp_size[0] * tmp_size[1] - 1;
     b_S_size[1] = tmp_size[1];
     AHV_Model_emxFree_real_T(&b_y_tmp);
@@ -849,7 +849,7 @@ void AH_Model_v1ModelClass::AHV_Model_torset_spec(real_T Hs, real_T wo, const
   }
 }
 
-// Function for MATLAB Function: '<S14>/Wave'
+// Function for MATLAB Function: '<S16>/Wave'
 void AH_Model_v1ModelClass::AHV_Model_wavespec2(real_T SpecType, const real_T
   Par_data[], const real_T W_data[], const int32_T *W_size,
   emxArray_real_T_AHV_Model_T *S)
@@ -991,7 +991,7 @@ void AH_Model_v1ModelClass::AHV_Model_wavespec2(real_T SpecType, const real_T
   }
 }
 
-// Function for MATLAB Function: '<S14>/Wave'
+// Function for MATLAB Function: '<S16>/Wave'
 real_T AH_Model_v1ModelClass::AHV_Model_eml_rand_mt19937ar(uint32_T state[625])
 {
   real_T r;
@@ -1124,7 +1124,7 @@ real_T AH_Model_v1ModelClass::AHV_Model_eml_rand_mt19937ar(uint32_T state[625])
   return r;
 }
 
-// Function for MATLAB Function: '<S14>/Wave'
+// Function for MATLAB Function: '<S16>/Wave'
 void AH_Model_v1ModelClass::AHV_Model_rand(real_T varargin_2,
   emxArray_real_T_AHV_Model_T *r, DW_Wave_init_T *localDW)
 {
@@ -1140,7 +1140,7 @@ void AH_Model_v1ModelClass::AHV_Model_rand(real_T varargin_2,
   }
 }
 
-// Function for MATLAB Function: '<S14>/Wave'
+// Function for MATLAB Function: '<S16>/Wave'
 real_T AH_Model_v1ModelClass::AHV_Model_fzero(real_T
   FunFcn_tunableEnvironment_f1, const real_T FunFcn_tunableEnvironment_f2[900],
   real_T FunFcn_tunableEnvironment_f3, const real_T x[2])
@@ -1255,17 +1255,17 @@ real_T AH_Model_v1ModelClass::AHV_Model_fzero(real_T
 
 //
 // System initialize for atomic system:
-//    '<S8>/Subsystem3'
-//    '<S92>/Subsystem3'
-//    '<S176>/Subsystem3'
-//    '<S260>/Subsystem3'
+//    '<S10>/Subsystem3'
+//    '<S106>/Subsystem3'
+//    '<S202>/Subsystem3'
+//    '<S298>/Subsystem3'
 //
 void AH_Model_v1ModelClass::Wave_init_Init(DW_Wave_init_T *localDW)
 {
   uint32_T r;
   int32_T mti;
 
-  // SystemInitialize for MATLAB Function: '<S14>/Wave'
+  // SystemInitialize for MATLAB Function: '<S16>/Wave'
   std::memset(&localDW->state[0], 0, 625U * sizeof(uint32_T));
   r = 5489U;
   localDW->state[0] = 5489U;
@@ -1276,15 +1276,15 @@ void AH_Model_v1ModelClass::Wave_init_Init(DW_Wave_init_T *localDW)
 
   localDW->state[624] = 624U;
 
-  // End of SystemInitialize for MATLAB Function: '<S14>/Wave'
+  // End of SystemInitialize for MATLAB Function: '<S16>/Wave'
 }
 
 //
 // Output and update for atomic system:
-//    '<S8>/Subsystem3'
-//    '<S92>/Subsystem3'
-//    '<S176>/Subsystem3'
-//    '<S260>/Subsystem3'
+//    '<S10>/Subsystem3'
+//    '<S106>/Subsystem3'
+//    '<S202>/Subsystem3'
+//    '<S298>/Subsystem3'
 //
 void AH_Model_v1ModelClass::Wave_init(real_T rtu_spectrum_type, real_T rtu_hs,
   real_T rtu_omega_peak, real_T rtu_psi_mean, real_T rtu_gamma, real_T
@@ -1385,11 +1385,11 @@ void AH_Model_v1ModelClass::Wave_init(real_T rtu_spectrum_type, real_T rtu_hs,
 
   boolean_T guard1 = false;
 
-  // MATLAB Function: '<S14>/Wave' incorporates:
-  //   Constant: '<S14>/Constant'
-  //   Constant: '<S14>/Constant1'
-  //   Constant: '<S14>/Constant3'
-  //   Constant: '<S14>/Constant4'
+  // MATLAB Function: '<S16>/Wave' incorporates:
+  //   Constant: '<S16>/Constant'
+  //   Constant: '<S16>/Constant1'
+  //   Constant: '<S16>/Constant3'
+  //   Constant: '<S16>/Constant4'
 
   *rty_wave_direction = rtu_psi_mean;
   hs_0 = rtu_hs;
@@ -1709,7 +1709,7 @@ void AH_Model_v1ModelClass::Wave_init(real_T rtu_spectrum_type, real_T rtu_hs,
       phase_vector->size[1] = 1;
       AHV_Mo_emxEnsureCapacity_real_T(phase_vector, nm1d2);
       for (nm1d2 = 0; nm1d2 < 200; nm1d2++) {
-        phase_vector->data[nm1d2] = AHV_Model_ConstP.pooled7[nm1d2];
+        phase_vector->data[nm1d2] = AHV_Model_ConstP.pooled9[nm1d2];
       }
 
       nm1d2 = rand_psi_vector->size[0] * rand_psi_vector->size[1];
@@ -1717,7 +1717,7 @@ void AH_Model_v1ModelClass::Wave_init(real_T rtu_spectrum_type, real_T rtu_hs,
       rand_psi_vector->size[1] = 1;
       AHV_Mo_emxEnsureCapacity_real_T(rand_psi_vector, nm1d2);
       for (nm1d2 = 0; nm1d2 < 200; nm1d2++) {
-        rand_psi_vector->data[nm1d2] = AHV_Model_ConstP.pooled8[nm1d2];
+        rand_psi_vector->data[nm1d2] = AHV_Model_ConstP.pooled10[nm1d2];
       }
     }
 
@@ -1924,7 +1924,7 @@ void AH_Model_v1ModelClass::Wave_init(real_T rtu_spectrum_type, real_T rtu_hs,
   std::memcpy(&rty_Omega[0], &localB->Omega[0], 900U * sizeof(real_T));
   std::memcpy(&rty_Zeta_a[0], &localB->Zeta_a[0], 900U * sizeof(real_T));
 
-  // End of MATLAB Function: '<S14>/Wave'
+  // End of MATLAB Function: '<S16>/Wave'
 }
 
 //

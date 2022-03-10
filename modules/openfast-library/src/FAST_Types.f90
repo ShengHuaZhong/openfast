@@ -818,11 +818,15 @@ IMPLICIT NONE
   END TYPE FAST_TurbineType
 
   TYPE, PUBLIC :: Ship_PID_Type
+  INTEGER(IntKi) :: Driver_Mode
   INTEGER(IntKi) :: keep_pos
   INTEGER(IntKi) :: keep_head
       REAL(ReKi) :: Target_X
       REAL(ReKi) :: Target_Y
       REAL(ReKi) :: Target_HEAD
+      REAL(ReKi) :: Target_Velocity;
+      REAL(ReKi) :: Rudder;
+      REAL(ReKi) :: Thrust;
   END TYPE Ship_PID_Type
 ! =======================
 CONTAINS

@@ -32,7 +32,6 @@ PROGRAM FAST
 
 
    USE FAST_Subs   ! all of the ModuleName and ModuleName_types modules are inherited from FAST_Subs
-
    IMPLICIT  NONE
 
    ! Local parameters:
@@ -177,14 +176,18 @@ PROGRAM FAST
          CALL update_ship_control(Ship1_Control_Order, Ship2_Control_Order, Ship3_Control_Order, Ship4_Control_Order)
          CALL update_winch_order(5, Winch1_Speed)
          CALL update_winch_order(6, Winch2_Speed)
+
          CALL FLines_OUT(Turbine(i_turb)%MD%m, Turbine(i_turb)%MD%p, Turbine(i_turb)%MD%y, Ship1_Line_Force, Ship2_Line_Force, Ship3_Line_Force, Ship4_Line_Force)
 
-         CALL shipsetfun1(Mean_Wave_Height, Ship1_Control_Order%keep_head, Wave_Direction, Current_Direction, Current_Speed, Ship1_Control_Order%keep_pos, &
-            Ship1_Control_Order%Target_X, Ship1_Control_Order%Target_Y, Ship1_Control_Order%Target_HEAD,&
-            Ship1_Line_Force)
-         CALL shipsetfun2(Ship2_Control_Order%keep_pos, Ship2_Control_Order%keep_head, Ship2_Control_Order%Target_X, Ship2_Control_Order%Target_Y, Ship2_Control_Order%Target_HEAD, Ship2_Line_Force)
-         CALL shipsetfun3(Ship3_Control_Order%keep_pos, Ship3_Control_Order%keep_head, Ship3_Control_Order%Target_X, Ship3_Control_Order%Target_Y, Ship3_Control_Order%Target_HEAD, Ship3_Line_Force)
-         CALL shipsetfun4(Ship4_Control_Order%keep_pos, Ship4_Control_Order%keep_head, Ship4_Control_Order%Target_X, Ship4_Control_Order%Target_Y, Ship4_Control_Order%Target_HEAD, Ship4_Line_Force)
+         CALL update_sea_env(Mean_Wave_Height, Wave_Direction, Current_Direction,Current_Speed);
+         CALL shipsetfun1(Mean_Wave_Height, Wave_Direction, Current_Direction, &
+            Current_Speed, Ship1_Control_Order%Driver_Mode, Ship1_Control_Order%keep_head,&
+            Ship1_Control_Order%keep_pos, Ship1_Control_Order%Rudder,Ship1_Control_Order%Thrust,&
+            Ship1_Control_Order%Target_Velocity,Ship1_Control_Order%Target_X, Ship1_Control_Order%Target_Y, &
+            Ship1_Control_Order%Target_HEAD, Ship1_Line_Force)
+         CALL shipsetfun2(Ship2_Control_Order%Driver_Mode, Ship2_Control_Order%keep_head, Ship2_Control_Order%keep_pos, Ship2_Control_Order%Rudder,Ship2_Control_Order%Thrust,Ship2_Control_Order%Target_Velocity, Ship2_Control_Order%Target_X, Ship2_Control_Order%Target_Y, Ship2_Control_Order%Target_HEAD, Ship2_Line_Force)
+         CALL shipsetfun3(Ship3_Control_Order%Driver_Mode, Ship3_Control_Order%keep_head, Ship3_Control_Order%keep_pos, Ship3_Control_Order%Rudder,Ship3_Control_Order%Thrust,Ship3_Control_Order%Target_Velocity, Ship3_Control_Order%Target_X, Ship3_Control_Order%Target_Y, Ship3_Control_Order%Target_HEAD, Ship3_Line_Force)
+         CALL shipsetfun4(Ship4_Control_Order%Driver_Mode, Ship4_Control_Order%keep_head, Ship4_Control_Order%keep_pos, Ship4_Control_Order%Rudder,Ship4_Control_Order%Thrust,Ship4_Control_Order%Target_Velocity, Ship4_Control_Order%Target_X, Ship4_Control_Order%Target_Y, Ship4_Control_Order%Target_HEAD, Ship4_Line_Force)
 
          CALL shipsportfun1(Turbine(i_turb)%p_FAST%Ship1_Surge, Turbine(i_turb)%p_FAST%Ship1_Sway, Turbine(i_turb)%p_FAST%Ship1_Heave, Turbine(i_turb)%p_FAST%Ship1_Roll, Turbine(i_turb)%p_FAST%Ship1_Pitch, Turbine(i_turb)%p_FAST%Ship1_Yaw, Ship1_Freedom, Ship1_Velocity)
          CALL shipsportfun2(Turbine(i_turb)%p_FAST%Ship2_Surge, Turbine(i_turb)%p_FAST%Ship2_Sway, Turbine(i_turb)%p_FAST%Ship2_Heave, Turbine(i_turb)%p_FAST%Ship2_Roll, Turbine(i_turb)%p_FAST%Ship2_Pitch, Turbine(i_turb)%p_FAST%Ship2_Yaw, Ship2_Freedom, Ship2_Velocity)
@@ -216,10 +219,7 @@ PROGRAM FAST
 
 
 
-         Mean_Wave_Height            = 0
-         Wave_Direction              = 0
-         Current_Direction           = 0
-         Current_Speed               = 0
+
          ! if we need to do linarization analysis, do it at this operating point (which is now n_t_global + 1)
          ! put this at the end of the loop so that we can output linearization analysis at last OP if desired
          CALL FAST_Linearize_T(t_initial, n_t_global+1, Turbine(i_turb), ErrStat, ErrMsg)

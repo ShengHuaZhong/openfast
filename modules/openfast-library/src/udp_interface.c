@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "cjson/cJSON.h"
+#include "log.h"
 #include "proj.h"
 #define SHIP_PID_PACKET (1)
 
@@ -22,16 +23,24 @@
 
 #define LINE_FORCE_PACKET (4)
 
+#define TUG_DRIVER_CONSOLE (6)
+
+#define DIRECTOR_INIT_PACK (7)
+
 #define LINE_LEN_PACKET (5)
 
 #define DISPLAY_PACKET (5)
 
 typedef struct {
+  int driver_mode_;
   int keep_pos_;
   int kepp_head_;
   double target_x_;
   double target_y_;
   double target_head_;
+  double target_velocity_;
+  double rudder_;
+  double thrust_;
 } ship_pid;
 
 typedef struct {
@@ -107,6 +116,8 @@ int init_socket_();
 
 void* recv_data_(void*);
 
+static void update_tug_driver(ship_pid*, cJSON* root);
+
 void update_ship_control_(ship_pid* ship1_fortran, ship_pid* ship2_fortran,
                           ship_pid* ship3_fortran, ship_pid* ship4_fortran);
 
@@ -124,6 +135,12 @@ void send_dispaly_pack(double* Fairten1, double* Fairten2, double* Fairten3,
                        __float128* BWChainLength);
 void init_ship(ship_pid*);
 void send_gpgga_();
+
+static void parse_director_json(cJSON*);
+
+static void cJSON_GetDouble(double*, cJSON*, const char*);
+
+static void cJSON_GetInt(int* value, cJSON* item, const char* error);
 
 void send_gpgga_() {
   time_t times = time(NULL);
@@ -182,24 +199,25 @@ void send_gpgga_() {
 
 void debug_ship_pid_(ship_pid* ship) {
   if (ship != NULL) {
-    printf("\t\tkeep_pos     : %d\n", ship->keep_pos_);
-    printf("\t\tkepp_head    : %d\n", ship->kepp_head_);
-    printf("\t\ttarget_x_    : %f\n", ship->target_x_);
-    printf("\t\ttarget_y_    : %f\n", ship->target_y_);
-    printf("\t\ttarget_head  : %f\n", ship->target_head_);
-    printf("\n");
+    log_trace("\t\tkeep_pos     : %d", ship->keep_pos_);
+    log_trace("\t\tkepp_head    : %d", ship->kepp_head_);
+    log_trace("\t\ttarget_x_    : %f", ship->target_x_);
+    log_trace("\t\ttarget_y_    : %f", ship->target_y_);
+    log_trace("\t\ttarget_head  : %f", ship->target_head_);
   }
 }
 
 void debug_winch_order(winch_control_order* order) {
   if (order != NULL) {
-    printf("\t\twinch id      : %d\n", order->winch_id_);
-    printf("\t\twinch speed   : %f\n", order->winch_speed_);
-    printf("\n");
+    log_trace("\t\twinch id      : %d", order->winch_id_);
+    log_trace("\t\twinch speed   : %f", order->winch_speed_);
   }
 }
 
+static void update_ship_pid_from_udp(ship_pid*, cJSON*);
+
 int init_socket_() {
+  log_set_level(LOG_TRACE);
   init_ship(&ship1);
   init_ship(&ship2);
   init_ship(&ship3);
@@ -218,18 +236,34 @@ int init_socket_() {
     server_addr.sin_port = htons(9000);
     ret = bind(socket_fd, (struct sockaddr*)&server_addr,
                sizeof(struct sockaddr_in));
+
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1},
+                   sizeof(int)) < 0) {
+      log_error("setsockopt(SO_REUSEADDR) failed");
+    }
+    struct ip_mreqn group;
+
+    inet_pton(AF_INET, "224.0.1.0", &group.imr_multiaddr);
+    group.imr_address.s_addr = htonl(INADDR_ANY);
+    inet_pton(AF_INET, "10.192.102.198", &group.imr_address);
+    int BROADCAST_ENABLE = 1;
+
+    int r = setsockopt(socket_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
+                       sizeof(group));
+    log_trace("setsockopt return %d", r);
+
     struct epoll_event event;
-    event.events = EPOLLIN | EPOLLET;
+    event.events = EPOLLIN;
     event.data.fd = socket_fd;
     int ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_fd, &event);
     if (ret != 0) {
-      printf("%s:%d epoll_ctl return value:%d\n", __FILE__, __LINE__, ret);
+      log_error("epoll_ctl return value:%d", ret);
     }
   }
 
   read_profile_and_init("profile.json");
   if (ret < 0) {
-    printf("socket bind fail!\n");
+    log_fatal("socket bind fail!");
     return -1;
   }
 
@@ -237,23 +271,18 @@ int init_socket_() {
   {
     tcp_socket_fd = socket(AF_INET, SOCK_STREAM, 0);
     memset(&server_addr, 0, sizeof(struct sockaddr_in));
-    struct sockaddr_in tcp_local_addr;
-    tcp_local_addr.sin_family = AF_INET;
-    tcp_local_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    tcp_local_addr.sin_port = htons(4527);
-    // bind(tcp_socket_fd, (struct sockaddr*)&tcp_local_addr,
-    //      sizeof(struct sockaddr_in));
-
+    int flags = fcntl(tcp_socket_fd, F_GETFL, 0);
+    fcntl(tcp_socket_fd, F_SETFL, flags | O_NONBLOCK);
     socklen_t sock_len = sizeof(struct sockaddr_in);
     int ret =
         connect(tcp_socket_fd, (struct sockaddr*)&director_addr, sock_len);
 
     struct epoll_event event;
-    event.events = EPOLLIN | EPOLLET;
+    event.events = EPOLLIN;
     event.data.fd = tcp_socket_fd;
     ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, tcp_socket_fd, &event);
     if (ret != 0) {
-      printf("%s:%d epoll_ctl return value:%d\n", __FILE__, __LINE__, ret);
+      log_error("epoll_ctl return value:%d", ret);
     }
   }
 
@@ -409,7 +438,8 @@ void* recv_data_(void* args) {
   const int max_event_num = 1024;
   struct epoll_event events[max_event_num];
   memset(events, 0, sizeof(struct epoll_event) * max_event_num);
-
+  u_int16_t pack_len = 0;
+  int tcp_flag = 0;
   if (socket_fd > 0)
     while (1) {
       int recv_size = 0;
@@ -420,76 +450,60 @@ void* recv_data_(void* args) {
         int fd = events[i].data.fd;
         if (events[i].events & EPOLLIN == EPOLLIN) {
           if (fd == tcp_socket_fd) {
-            int pack_len = 0;
-            read(fd, &pack_len, 4);
-            printf("TCP data received, packet length %d\n", pack_len);
-            if (pack_len < pack_buf_len) {
-              recv_size = read(fd, buf, pack_len);
+            if (tcp_flag == 0) {
+              int r = read(fd, &pack_len, sizeof(pack_len));
+              pack_len = ntohs(pack_len);
+              log_debug("TCP data received %d, packet length %u", r, pack_len);
+              if (r == 0) {
+                log_warn(
+                    "Disconnect the TCP connection with the director station");
+                struct epoll_event event;
+                epoll_ctl(epoll_fd, EPOLL_CTL_DEL, tcp_socket_fd, &event);
+              }
+              tcp_flag = 1;
+            } else if (tcp_flag == 1) {
+              if (pack_len < pack_buf_len) {
+                recv_size = read(fd, buf, pack_len);
+                log_debug("TCP data received %d, packet: %s", recv_size, buf);
+                tcp_flag = 0;
+                pack_len = 0;
+              }
             }
+
           } else if (fd == socket_fd) {
             recv_size = recvfrom(socket_fd, buf, 4096, 0,
                                  (struct sockaddr*)&client_addres, &socklen);
           }
         }
-
         if (recv_size > 2) {
           cJSON* packet_json = cJSON_Parse(buf);
           if (packet_json == NULL) {
-            printf("JSON parse fail\n");
+            log_warn("JSON parse fail");
             continue;
           }
 
           cJSON* type_json = cJSON_GetObjectItem(packet_json, "type");
-          // printf("\ttype  :%d\n", type_json->valueint);
+          if (type_json == NULL) {
+            log_error("Don't have field (type)");
+            continue;
+          }
+          log_trace("json packet type:%d", type_json->valueint);
           if (type_json != NULL) {
             const int packet_type = type_json->valueint;
+
             if (packet_type == SHIP_PID_PACKET) {
               cJSON* ship_id = cJSON_GetObjectItem(packet_json, "ship_id");
               if (ship_id == NULL) {
-                printf("Don't have field (ship_id)\n");
-                continue;
+                log_warn("Don't have field (ship_id)");
+                return;
               }
-              cJSON* keep_pos_json =
-                  cJSON_GetObjectItem(packet_json, "keep_pos");
-              if (keep_pos_json == NULL) {
-                printf("Don't have field (keep_pos)\n");
-                continue;
-              }
-              cJSON* keep_head_json =
-                  cJSON_GetObjectItem(packet_json, "keep_head");
-              if (keep_head_json == NULL) {
-                printf("Don't have field (keep_head)\n");
-                continue;
-              }
-              cJSON* target_x_json =
-                  cJSON_GetObjectItem(packet_json, "target_x");
-              if (target_x_json == NULL) {
-                printf("Don't have field (target_x)\n");
-                continue;
-              }
-              cJSON* target_y_json =
-                  cJSON_GetObjectItem(packet_json, "target_y");
-              if (target_y_json == NULL) {
-                printf("Don't have field (target_y)\n");
-                continue;
-              }
-              cJSON* target_head_json =
-                  cJSON_GetObjectItem(packet_json, "target_head");
-              if (target_head_json == NULL) {
-                printf("Don't have field (target_head)\n");
-                continue;
+              const int ship_index = ship_id->valueint - 1;
+              if (ship_index > 0 && ship_index < 4) {
+                update_ship_pid_from_udp(ships[ship_index], packet_json);
+              } else {
+                log_warn("Don't have field (ship_id %d)", ship_index);
               }
 
-              if (ship_id->valueint > 0 && ship_id->valueint < 5) {
-                const int ship_index = ship_id->valueint - 1;
-                ships[ship_index]->keep_pos_ = keep_pos_json->valueint;
-                ships[ship_index]->kepp_head_ = keep_head_json->valueint;
-                ships[ship_index]->target_x_ = target_x_json->valuedouble;
-                ships[ship_index]->target_y_ = target_y_json->valuedouble;
-                ships[ship_index]->target_head_ = target_head_json->valuedouble;
-                printf("\t\tship_id      : %d\n", ship_id->valueint);
-                debug_ship_pid_(ships[ship_index]);
-              }
             } else if (packet_type == WINCH_CONTROL_ORDER_PACKET) {
               cJSON* winch_id = cJSON_GetObjectItem(packet_json, "winch_id");
               if (winch_id == NULL) {
@@ -545,6 +559,27 @@ void* recv_data_(void* args) {
               env.current_speed_ = current_speed_json->valuedouble;
               env.wave_direction_ = wave_direction_json->valuedouble;
               env.wave_height_ = wave_height_json->valuedouble;
+            } else if (packet_type == TUG_DRIVER_CONSOLE) {
+              log_trace("recive TUG_DRIVER_CONSOLE");
+              cJSON* console_id_item = cJSON_GetObjectItem(packet_json, "ID");
+              if (console_id_item != NULL) {
+                int console_id = console_id_item->valueint;
+                if (console_id == 1) {
+                  // 360 degree ball screen
+                  log_trace("recive TUG 1");
+                  update_tug_driver(&ship4, packet_json);
+                } else if (console_id == 2) {
+                  // 102 room
+                  log_trace("recive TUG 2");
+                  update_tug_driver(&ship1, packet_json);
+                } else if (console_id == 3) {
+                  update_tug_driver(&ship3, packet_json);
+                } else if (console_id == 4) {
+                  update_tug_driver(&ship2, packet_json);
+                }
+              }
+            } else if (packet_type == DIRECTOR_INIT_PACK) {
+              parse_director_json(packet_json);
             }
           } else {
             printf("No type field exists\n");
@@ -575,6 +610,10 @@ void update_ship_control_(ship_pid* ship1_fortran, ship_pid* ship2_fortran,
     ship1_fortran->target_x_ = ship1.target_x_;
     ship1_fortran->target_x_ = ship1.target_x_;
     ship1_fortran->target_head_ = ship1.target_head_;
+    ship1_fortran->driver_mode_ = ship1.driver_mode_;
+    ship1_fortran->rudder_ = ship1.rudder_;
+    ship1_fortran->target_velocity_ = ship1.target_velocity_;
+    ship1_fortran->thrust_ = ship1.thrust_;
   }
 
   if (ship2_fortran != NULL) {
@@ -583,6 +622,10 @@ void update_ship_control_(ship_pid* ship1_fortran, ship_pid* ship2_fortran,
     ship2_fortran->target_x_ = ship2.target_x_;
     ship2_fortran->target_x_ = ship2.target_x_;
     ship2_fortran->target_head_ = ship2.target_head_;
+    ship2_fortran->driver_mode_ = ship2.driver_mode_;
+    ship2_fortran->rudder_ = ship2.rudder_;
+    ship2_fortran->target_velocity_ = ship2.target_velocity_;
+    ship2_fortran->thrust_ = ship2.thrust_;
   }
 
   if (ship3_fortran != NULL) {
@@ -591,6 +634,10 @@ void update_ship_control_(ship_pid* ship1_fortran, ship_pid* ship2_fortran,
     ship3_fortran->target_x_ = ship3.target_x_;
     ship3_fortran->target_x_ = ship3.target_x_;
     ship3_fortran->target_head_ = ship3.target_head_;
+    ship3_fortran->driver_mode_ = ship3.driver_mode_;
+    ship3_fortran->rudder_ = ship3.rudder_;
+    ship3_fortran->target_velocity_ = ship3.target_velocity_;
+    ship3_fortran->thrust_ = ship3.thrust_;
   }
 
   if (ship4_fortran != NULL) {
@@ -599,6 +646,10 @@ void update_ship_control_(ship_pid* ship1_fortran, ship_pid* ship2_fortran,
     ship4_fortran->target_x_ = ship4.target_x_;
     ship4_fortran->target_x_ = ship4.target_x_;
     ship4_fortran->target_head_ = ship4.target_head_;
+    ship4_fortran->driver_mode_ = ship4.driver_mode_;
+    ship4_fortran->rudder_ = ship4.rudder_;
+    ship4_fortran->target_velocity_ = ship4.target_velocity_;
+    ship4_fortran->thrust_ = ship4.thrust_;
   }
 }
 
@@ -741,8 +792,8 @@ void read_profile_and_init(const char* filename) {
           cJSON* network_addres_json =
               cJSON_GetObjectItem(location_monitor_json, "network_addres");
           if (network_addres_json == NULL) {
-            printf(
-                "\tMissing field from reading profile file: "
+            log_trace(
+                "Missing field from reading profile file: "
                 "(network_addres),using 127.0.0.1\n");
             location_monitor_pack_buf[i].addr_.sin_addr.s_addr =
                 inet_addr("127.0.0.1");
@@ -753,8 +804,8 @@ void read_profile_and_init(const char* filename) {
           cJSON* network_port_json =
               cJSON_GetObjectItem(location_monitor_json, "network_port");
           if (network_port_json == NULL) {
-            printf(
-                "\tMissing field from reading profile file: "
+            log_trace(
+                "Missing field from reading profile file: "
                 "(network_port), using 9000\n");
             location_monitor_pack_buf[i].addr_.sin_port = htons(9000);
           } else {
@@ -765,8 +816,8 @@ void read_profile_and_init(const char* filename) {
           cJSON* ship_base_x_json =
               cJSON_GetObjectItem(location_monitor_json, "ship_base_x");
           if (ship_base_x_json == NULL) {
-            printf(
-                "\tMissing field from reading profile file: "
+            log_warn(
+                "Missing field from reading profile file: "
                 "(ship_base_x), using 0\n");
           } else {
             location_monitor_pack_buf[i].base_point_x_ =
@@ -775,8 +826,8 @@ void read_profile_and_init(const char* filename) {
           cJSON* ship_base_y_json =
               cJSON_GetObjectItem(location_monitor_json, "ship_base_y");
           if (ship_base_y_json == NULL) {
-            printf(
-                "\tMissing field from reading profile file: "
+            log_warn(
+                "Missing field from reading profile file: "
                 "(ship_base_y), using 0\n");
           } else {
             location_monitor_pack_buf[i].base_point_y_ =
@@ -791,9 +842,9 @@ void read_profile_and_init(const char* filename) {
       cJSON* data_display_network_address =
           cJSON_GetObjectItem(profile_json_root, "data_display_network");
       if (data_display_network_address == NULL) {
-        printf(
-            "\tMissing field from reading profile file: "
-            "(data_display_network), using 127.0.0.1\n");
+        log_warn(
+            "Missing field from reading profile file: "
+            "(data_display_network), using 127.0.0.1");
         display_remote_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
       } else {
         display_remote_addr.sin_addr.s_addr =
@@ -802,8 +853,8 @@ void read_profile_and_init(const char* filename) {
       cJSON* data_display_network_port =
           cJSON_GetObjectItem(profile_json_root, "data_display_port");
       if (data_display_network_port == NULL) {
-        printf(
-            "\tMissing field from reading profile file: "
+        log_warn(
+            "Missing field from reading profile file: "
             "(data_display_port), using 9000\n");
         display_remote_addr.sin_port = htons(9000);
       } else {
@@ -817,9 +868,9 @@ void read_profile_and_init(const char* filename) {
       cJSON* remote_network_address =
           cJSON_GetObjectItem(profile_json_root, "visual_network");
       if (remote_network_address == NULL) {
-        printf(
-            "\tMissing field from reading profile file: "
-            "(visual_network), using 127.0.0.1\n");
+        log_warn(
+            "Missing field from reading profile file: "
+            "(visual_network), using 127.0.0.1");
         remote_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
       } else {
         remote_addr.sin_addr.s_addr =
@@ -828,13 +879,12 @@ void read_profile_and_init(const char* filename) {
       cJSON* remote_network_port =
           cJSON_GetObjectItem(profile_json_root, "visual_port");
       if (remote_network_port == NULL) {
-        printf(
-            "\tMissing field from reading profile file: "
-            "(visual_port), using 9000\n");
+        log_warn(
+            "Missing field from reading profile file: "
+            "(visual_port), using 9000");
         remote_addr.sin_port = htons(9000);
       } else {
         remote_addr.sin_port = htons(remote_network_port->valueint);
-        printf("\t\t\t%d\n", remote_network_port->valueint);
       }
 
       //
@@ -843,9 +893,9 @@ void read_profile_and_init(const char* filename) {
       cJSON* director_network_address =
           cJSON_GetObjectItem(profile_json_root, "director_network");
       if (director_network_address == NULL) {
-        printf(
-            "\tMissing field from reading profile file: "
-            "(director_network), using 127.0.0.1\n");
+        log_warn(
+            "Missing field from reading profile file: "
+            "(director_network), using 127.0.0.1");
         director_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
       } else {
         director_addr.sin_addr.s_addr =
@@ -854,23 +904,122 @@ void read_profile_and_init(const char* filename) {
       cJSON* director_port =
           cJSON_GetObjectItem(profile_json_root, "director_port");
       if (director_port == NULL) {
-        printf(
-            "\tMissing field from reading profile file: "
-            "(director_port), using 9000\n");
+        log_warn(
+            "Missing field from reading profile file: "
+            "(director_port), using 9000");
         director_addr.sin_port = htons(9000);
       } else {
         director_addr.sin_port = htons(director_port->valueint);
       }
 
+      cJSON* logger_json =
+          cJSON_GetObjectItem(profile_json_root, "logger_level");
+      if (logger_json == NULL)
+        log_set_level(LOG_INFO);
+      else
+        log_set_level(logger_json->valueint);
+
     } else {
-      printf(
-          "\t The content of the profile file does not conform to JSON "
-          "format "
-          "\n");
+      log_error(
+          "The content of the profile file does not conform to JSON format ");
       exit(-1);
     }
   } else {
-    printf("\tThe profile cannot exist\n");
+    log_debug("The profile cannot exist");
     exit(-1);
   }
+}
+
+static void update_tug_driver(ship_pid* ship, cJSON* root) {
+  cJSON* velocity_item = cJSON_GetObjectItem(root, "ZT_L_Y");
+  cJSON* rudder_item = cJSON_GetObjectItem(root, "ZT_L_W");
+  cJSON_GetDouble(&ship->thrust_, velocity_item, "Missing field (ZT_L_W)");
+  cJSON_GetDouble(&ship->rudder_, rudder_item, "Missing field (ZT_L_Y)");
+  ship->thrust_ = ship->thrust_ / 100;
+  log_trace("update_tug_driver:(thrust %f) (ruder %f)", ship->thrust_,
+            ship->rudder_, ship->target_velocity_, ship->driver_mode_);
+}
+
+static void cJSON_GetDouble(double* value, cJSON* item, const char* error) {
+  if (item == NULL) {
+    log_warn("cJSON_GetDouble (value null): %s", error);
+    return;
+  }
+  if (value == NULL) {
+    log_warn("cJSON_GetDouble (item null): %s", error);
+    return;
+  }
+  if (error == NULL) {
+    log_warn("cJSON_GetDouble (error null)");
+    return;
+  }
+  *value = item->valuedouble;
+}
+
+static void cJSON_GetInt(int* value, cJSON* item, const char* error) {
+  if (item == NULL) {
+    log_warn("cJSON_GetInt (value null): %s", error);
+    return;
+  }
+  if (value == NULL) {
+    log_warn("cJSON_GetInt (item null): %s", error);
+    return;
+  }
+  if (error == NULL) {
+    log_warn("cJSON_GetDouble (error null)");
+    return;
+  }
+  *value = item->valueint;
+}
+
+static void parse_director_json(cJSON* root) {
+  log_trace("Call function (parse_director_json)");
+  cJSON* current_direction_json = cJSON_GetObjectItem(root, "CurrentDirection");
+  cJSON* current_velocity_json = cJSON_GetObjectItem(root, "CurrentSpeed");
+  cJSON* wave_direction_json = cJSON_GetObjectItem(root, "WaveDirection");
+  cJSON* wave_height_json = cJSON_GetObjectItem(root, "WaveHeight");
+
+  cJSON_GetDouble(&env.current_speed_, current_velocity_json,
+                  "Miss field (CurrentSpeed)");
+  cJSON_GetDouble(&env.current_direction_, current_direction_json,
+                  "Miss field (CurrentDirection)");
+  cJSON_GetDouble(&env.wave_direction_, wave_direction_json,
+                  "Miss field (WaveDirection)");
+  cJSON_GetDouble(&env.wave_height_, wave_height_json,
+                  "Miss field (WaveHeight)");
+  log_trace("Finash call cuntion (parse_director_json)");
+}
+
+static void update_ship_pid_from_udp(ship_pid* ship, cJSON* packet_json) {
+  if (ship == NULL) {
+    log_error("update_ship_pid_from_udp (ship null)");
+  }
+  if (packet_json == NULL) {
+    log_error("update_ship_pid_from_udp (packet_json null)");
+  }
+  cJSON* keep_pos_json = cJSON_GetObjectItem(packet_json, "keep_pos");
+  cJSON* keep_head_json = cJSON_GetObjectItem(packet_json, "keep_head");
+  cJSON* target_x_json = cJSON_GetObjectItem(packet_json, "target_x");
+  cJSON* target_y_json = cJSON_GetObjectItem(packet_json, "target_y");
+  cJSON* target_head_json = cJSON_GetObjectItem(packet_json, "target_head");
+  cJSON* target_velocity = cJSON_GetObjectItem(packet_json, "target_velocity");
+  cJSON* driver_mode_item = cJSON_GetObjectItem(packet_json, "driver_mode");
+  cJSON_GetInt(&ship->keep_pos_, keep_pos_json, "Missing field (keep_pos)");
+  cJSON_GetInt(&ship->kepp_head_, keep_pos_json, "Missing field (keep_head)");
+  cJSON_GetDouble(&ship->target_x_, target_x_json, "Missing field (target_x)");
+  cJSON_GetDouble(&ship->target_y_, target_y_json, "Missing field (target_y)");
+  cJSON_GetDouble(&ship->target_head_, target_head_json,
+                  "Missing field (target_head)");
+
+  cJSON_GetDouble(&ship->target_velocity_, target_velocity,
+                  "Missing field (target_velocity)");
+  cJSON_GetInt(&ship->driver_mode_, driver_mode_item,
+               "Missing field (driver_mode)");
+
+  log_trace(
+      "update_ship_pid_from_udp (keep_pos %d) (keep_head %d) (target_x %f) "
+      "(target_y %f) (target_head %f) (target_velocity %f) (driver_mode %d)",
+      ship->keep_pos_, ship->kepp_head_, ship->target_x_, ship->target_y_,
+      ship->target_head_, ship->target_velocity_, ship->driver_mode_);
+  debug_ship_pid_(ship);
 }

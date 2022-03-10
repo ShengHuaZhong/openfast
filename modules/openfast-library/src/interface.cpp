@@ -2,7 +2,9 @@
 #include <stdio.h>
 
 #include "AHV_Model.h"  // Model's header file
-
+extern "C" {
+#include "log.h"
+}
 static AH_Model_v1ModelClass AHV_Model_Obj;  // Instance of model class
 
 double turn[6] = {1, 1, -1, 1, 1, 1};
@@ -14,6 +16,10 @@ double V2_Fairlead_pos[3] = {-60, 0, 0};  //���¿�λ��
 double V3_Fairlead_pos[3] = {-60, 0, 0};  //���¿�λ��
 
 double V4_Fairlead_pos[3] = {-60, 0, 0};  //���¿�λ��
+
+// RuddeAngle1[-35 35]deg
+// ThrusterPercentage1[-0.01 0.01]
+// TragetSpeed1-m/s
 extern "C" {
 void ship_init_fun_(
     __float128* dtime, double* V1_surge_init, double* V1_sway_init,
@@ -33,8 +39,6 @@ void ship_init_fun_(
     double* V4_roll_init, double* V4_pitch_init, double* V4_yaw_init)
 
 {
-  printf("\tInitialization of tugboat mathematical model\n");
-
   spectrum_type = 1;
 
   omega_peak = -1;
@@ -110,15 +114,30 @@ void ship_init_fun_(
   Vessel_init4[5] = *V4_yaw_init;
 }
 
-void shipsetfun1_(double* MeaningWaveHeight, int* heading_contral_mode11,
-                  double* WaveDirection, double* CurrentDirection,
-                  double* CurrentSpeed, int* V1_IfTugKeepInitPos,
-
+void shipsetfun1_(double* MeaningWaveHeight, double* WaveDirection,
+                  double* CurrentDirection, double* CurrentSpeed,
+                  int* DrvingMode1, int* HeadingMode11,
+                  int* V1_IfTugKeepInitPos, double* RuddeAngle1,
+                  double* ThrusterPercentage1, double* TragetSpeed1,
                   double* V1_TugTargetPosX, double* V1_TugTargetPosY,
                   double* heading_angle1, double V1_Flines[])
 
 {
-  Hold_Position1 = *V1_IfTugKeepInitPos;
+  log_trace(
+      "Call Function(shipsetfun1_) (MeaningWaveHeight %f) (WaveDirection %f) "
+      "(CurrentDirection %f) (CurrentSpeed %f) (RuddeAngle1 %f) "
+      "(Thruste %f)",
+      *MeaningWaveHeight, *WaveDirection, *CurrentDirection, *CurrentSpeed,
+      *RuddeAngle1, *ThrusterPercentage1);
+  Drving_Mode1 = *DrvingMode1;
+
+  heading_mode1 = *HeadingMode11;
+
+  Rudde_angle1 = *RuddeAngle1;
+
+  Thruster_percentage1 = *ThrusterPercentage1;
+
+  traget_speed1 = *TragetSpeed1;
 
   hs = *MeaningWaveHeight;
 
@@ -127,8 +146,6 @@ void shipsetfun1_(double* MeaningWaveHeight, int* heading_contral_mode11,
   Current_direction = *CurrentDirection;
 
   Current_speed = *CurrentSpeed;
-
-  heading_mode1 = *heading_contral_mode11;  // 1�Զ���0�ֶ�
 
   heading_angle_ref1 = *heading_angle1;
 
@@ -141,18 +158,35 @@ void shipsetfun1_(double* MeaningWaveHeight, int* heading_contral_mode11,
   {
     ahv_fairlead1[i] = V1_Fairlead_pos[i];
 
-    tau_cable1[i] = V1_Flines[i] * turn[i];
+    tau_cable1[i] = V1_Flines[i];
   }
 }
 
-void shipsetfun2_(int* V2_IfTugKeepInitPos, int* heading_contral_mode12,
+void shipsetfun2_(int* DrvingMode2, int* HeadingMode12,
+                  int* V2_IfTugKeepInitPos, double* RuddeAngle2,
+                  double* ThrusterPercentage2, double* TragetSpeed2,
                   double* V2_TugTargetPosX, double* V2_TugTargetPosY,
                   double* heading_angle2, double V2_Flines[])
 
 {
-  Hold_Position2 = *V2_IfTugKeepInitPos;
+  log_trace(
+      "Call funcion (shipsetfun2_) (DrvingMode %d) (HeadingMode %d) "
+      "(KeepInitPos %d) (Rudde %f) (Thruster %f) (TargetSpeed %f) "
+      "(TugTargetPosX %f) (TugTargetPosY %f ) (HeadAngle %f)",
+      *DrvingMode2, *HeadingMode12, *V2_IfTugKeepInitPos, *RuddeAngle2,
+      *ThrusterPercentage2, *TragetSpeed2, *V2_TugTargetPosX, *V2_TugTargetPosY,
+      *heading_angle2);
+  Drving_Mode2 = *DrvingMode2;
 
-  heading_mode2 = *heading_contral_mode12;
+  heading_mode2 = *HeadingMode12;
+
+  Rudde_angle2 = *RuddeAngle2;
+
+  Thruster_percentage2 = *ThrusterPercentage2;
+
+  traget_speed2 = *TragetSpeed2;
+
+  Hold_Position2 = *V2_IfTugKeepInitPos;
 
   heading_angle_ref2 = *heading_angle2;
 
@@ -169,14 +203,31 @@ void shipsetfun2_(int* V2_IfTugKeepInitPos, int* heading_contral_mode12,
   }
 }
 
-void shipsetfun3_(int* V3_IfTugKeepInitPos, int* heading_contral_mode13,
+void shipsetfun3_(int* DrvingMode3, int* HeadingMode13,
+                  int* V3_IfTugKeepInitPos, double* RuddeAngle3,
+                  double* ThrusterPercentage3, double* TragetSpeed3,
                   double* V3_TugTargetPosX, double* V3_TugTargetPosY,
                   double* heading_angle3, double V3_Flines[])
 
 {
-  Hold_Position3 = *V3_IfTugKeepInitPos;
+  log_trace(
+      "Call funcion (shipsetfun3_) (DrvingMode %d) (HeadingMode %d) "
+      "(KeepInitPos %d) (Rudde %f) (Thruster %f) (TargetSpeed %f) "
+      "(TugTargetPosX %f) (TugTargetPosY %f ) (HeadAngle %f)",
+      *DrvingMode3, *HeadingMode13, *V3_IfTugKeepInitPos, *RuddeAngle3,
+      *ThrusterPercentage3, *TragetSpeed3, *V3_TugTargetPosX, *V3_TugTargetPosY,
+      *heading_angle3);
+  Drving_Mode3 = *DrvingMode3;
 
-  heading_mode3 = *heading_contral_mode13;
+  heading_mode3 = *HeadingMode13;
+
+  Rudde_angle3 = *RuddeAngle3;
+
+  Thruster_percentage3 = *ThrusterPercentage3;
+
+  traget_speed3 = *TragetSpeed3;
+
+  Hold_Position3 = *V3_IfTugKeepInitPos;
 
   heading_angle_ref3 = *heading_angle3;
 
@@ -193,14 +244,31 @@ void shipsetfun3_(int* V3_IfTugKeepInitPos, int* heading_contral_mode13,
   }
 }
 
-void shipsetfun4_(int* V4_IfTugKeepInitPos, int* heading_contral_mode14,
+void shipsetfun4_(int* DrvingMode4, int* HeadingMode14,
+                  int* V4_IfTugKeepInitPos, double* RuddeAngle4,
+                  double* ThrusterPercentage4, double* TragetSpeed4,
                   double* V4_TugTargetPosX, double* V4_TugTargetPosY,
                   double* heading_angle4, double V4_Flines[])
 
 {
-  Hold_Position4 = *V4_IfTugKeepInitPos;
+  log_trace(
+      "Call funcion (shipsetfun4_) (DrvingMode %d) (HeadingMode %d) "
+      "(KeepInitPos %d) (Rudde %f) (Thruster %f) (TargetSpeed %f) "
+      "(TugTargetPosX %f) (TugTargetPosY %f) (HeadAngle %f)",
+      *DrvingMode4, *HeadingMode14, *V4_IfTugKeepInitPos, *RuddeAngle4,
+      *ThrusterPercentage4, *TragetSpeed4, *V4_TugTargetPosX, *V4_TugTargetPosY,
+      *heading_angle4);
+  Drving_Mode4 = *DrvingMode4;
 
-  heading_mode4 = *heading_contral_mode14;
+  heading_mode4 = *HeadingMode14;
+
+  Rudde_angle4 = *RuddeAngle4;
+
+  Thruster_percentage4 = *ThrusterPercentage4;
+
+  traget_speed4 = *TragetSpeed4;
+
+  Hold_Position4 = *V4_IfTugKeepInitPos;
 
   heading_angle_ref4 = *heading_angle4;
 
@@ -208,11 +276,7 @@ void shipsetfun4_(int* V4_IfTugKeepInitPos, int* heading_contral_mode14,
 
   Vessel_Y_Ref4 = *V4_TugTargetPosY;
 
-  // printf("\tshipsetfunc target position x: %f\n", Vessel_X_Ref4);
-
-  for (int i = 0; i < 3; i++)
-
-  {
+  for (int i = 0; i < 3; i++) {
     ahv_fairlead4[i] = V4_Fairlead_pos[i];
 
     tau_cable4[i] = V4_Flines[i] * turn[i];
@@ -338,7 +402,6 @@ void shipsportfun4_(double* V4_Surge, double* V4_Sway, double* V4_Heave,
 
 {
   *V4_Surge = eta_AHV4[0];
-
   *V4_Sway = eta_AHV4[1];
   *V4_Heave = -eta_AHV4[2];
   *V4_Roll = eta_AHV4[3];
