@@ -61,6 +61,7 @@ add_library(openfast_postlib
   src/Wave_loads.cpp
   src/Wave.cpp
   src/log.c
+  src/light_matrix.c
   )
 target_link_libraries(openfast_postlib openfast_prelib quadmath scdataexlib foamfastlib versioninfolib ${PROJ_LIBRARIES} ${CJSON_LIBRARIES})
 

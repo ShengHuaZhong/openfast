@@ -1,4 +1,5 @@
 #include <fcntl.h>
+#include <math.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <quadmath.h>
@@ -13,6 +14,7 @@
 #include <unistd.h>
 
 #include "cjson/cJSON.h"
+#include "light_matrix.h"
 #include "log.h"
 #include "proj.h"
 #define SHIP_PID_PACKET (1)
@@ -110,6 +112,9 @@ static PJ_CONTEXT* C;
 static PJ* P;
 static PJ* norm;
 static PJ_COORD a, b;
+const double ARC_TO_DEG = 57.29577951308238;
+const double DEG_TO_ARC = 0.0174532925199433;
+
 void read_profile_and_init(const char* filename);
 
 int init_socket_();
@@ -125,7 +130,7 @@ void update_sea_env_(double* wave_height, double* wave_direction,
                      double* current_direction, double* current_speed);
 
 void send_line_force_(int* id, double* force);
-
+double eulerAnglesToRotationMatrix(double roll, double pitch, double yaw);
 int send_data_(long double* time, double* ptfm_surge, double* ptfm_sway,
                double* ptfm_heave, double* ptfm_roll, double* ptfm_pitch,
                double* ptfm_yaw);
@@ -186,10 +191,29 @@ void send_gpgga_() {
       sendto(socket_fd, send_buf, send_len, 0,
              (struct sockaddr*)&pack_buf_ptr->addr_, socklen);
     }
+    double yaw_ang = 0;
+    if (i < 4) {
+      // ship
+      yaw_ang = eulerAnglesToRotationMatrix(pack_buf_ptr->ship_->roll_,
+                                            pack_buf_ptr->ship_->pitch_,
+                                            pack_buf_ptr->ship_->yaw_) *
+                ARC_TO_DEG;
+    } else {
+      // platfor
+      yaw_ang =
+          eulerAnglesToRotationMatrix(
+              pack_buf_ptr->ship_->roll_ * DEG_TO_ARC,
+              pack_buf_ptr->ship_->pitch_ * DEG_TO_ARC,
+              (pack_buf_ptr->ship_->yaw_ * DEG_TO_ARC) + 225 * DEG_TO_ARC) *
+          ARC_TO_DEG;
+    }
+    if (yaw_ang > 0) {
+      yaw_ang = 360 - yaw_ang;
+    } else {
+      yaw_ang = -yaw_ang;
+    }
 
-    send_len = snprintf(
-        send_buf, send_buf_len, "$GPHDT,%f*1F\r\n",
-        (pack_buf_ptr->ship_->yaw_ + 2.356194490192345) * 180 / 3.1415926);
+    send_len = snprintf(send_buf, send_buf_len, "$GPHDT,%f*1F\r\n", yaw_ang);
     if (send_len > 0) {
       sendto(socket_fd, send_buf, send_len, 0,
              (struct sockaddr*)&pack_buf_ptr->addr_, socklen);
@@ -363,9 +387,9 @@ int send_tug_data_(int* tug_id, double* tug_surge, double* tug_sway,
       update_ship_ptr->heave_ = *tug_heave;
       update_ship_ptr->surge_ = *tug_surge;
       update_ship_ptr->sway_ = *tug_sway;
-      update_ship_ptr->roll_ = roll_deg;
-      update_ship_ptr->pitch_ = pitch_deg;
-      update_ship_ptr->yaw_ = yaw_deg;
+      update_ship_ptr->roll_ = *tug_roll;
+      update_ship_ptr->pitch_ = *tug_pitch;
+      update_ship_ptr->yaw_ = *tug_yaw;
     }
   }
 }
@@ -438,7 +462,7 @@ void* recv_data_(void* args) {
   const int max_event_num = 1024;
   struct epoll_event events[max_event_num];
   memset(events, 0, sizeof(struct epoll_event) * max_event_num);
-  u_int16_t pack_len = 0;
+  int16_t pack_len = 0;
   int tcp_flag = 0;
   if (socket_fd > 0)
     while (1) {
@@ -530,6 +554,7 @@ void* recv_data_(void* args) {
                 // debug_winch_order(winchs[winch_id->valueint]);
               }
             } else if (packet_type == SEA_ENV_PACKET) {
+              parse_director_json(packet_json);
               cJSON* wave_height_json =
                   cJSON_GetObjectItem(packet_json, "wave_height");
               if (wave_height_json == NULL) {
@@ -1022,4 +1047,88 @@ static void update_ship_pid_from_udp(ship_pid* ship, cJSON* packet_json) {
       ship->keep_pos_, ship->kepp_head_, ship->target_x_, ship->target_y_,
       ship->target_head_, ship->target_velocity_, ship->driver_mode_);
   debug_ship_pid_(ship);
+}
+
+double eulerAnglesToRotationMatrix(double roll, double pitch, double yaw) {
+  log_trace(
+      "Call function (eulerAnglesToRotationMatrix)(roll %f)(pitch %f)(yaw angle"
+      " %f)(yaw %f)",
+      roll, pitch, yaw * ARC_TO_DEG, yaw);
+  Mat r_x;
+  Mat r_y;
+  Mat r_z;
+  Mat r_x_det;
+  Mat r_z_det;
+  Mat r;
+
+  float val_x[9] = {1, 0, 0, 0, cos(roll), -sin(roll), 0, sin(roll), cos(roll)};
+
+  float val_y[9] = {cos(pitch), 0,           sin(pitch), 0,         1,
+                    0,          -sin(pitch), 0,          cos(pitch)};
+
+  float val_z[9] = {cos(yaw), -sin(yaw), 0, sin(yaw), cos(yaw), 0, 0, 0, 1};
+
+  float val_x_det[9] = {1,
+                        0,
+                        0,
+                        0,
+                        cos(-180 * DEG_TO_ARC),
+                        -sin(-180 * DEG_TO_ARC),
+                        0,
+                        sin(-180 * DEG_TO_ARC),
+                        cos(-180 * DEG_TO_ARC)};
+
+  float val_z_det[9] = {cos(-90 * DEG_TO_ARC),
+                        -sin(-90 * DEG_TO_ARC),
+                        0,
+                        sin(-90 * DEG_TO_ARC),
+                        cos(-90 * DEG_TO_ARC),
+                        0,
+                        0,
+                        0,
+                        1};
+
+  MatCreate(&r_x, 3, 3);
+  MatSetVal(&r_x, val_x);
+
+  MatCreate(&r_y, 3, 3);
+  MatSetVal(&r_y, val_y);
+
+  MatCreate(&r_z, 3, 3);
+  MatSetVal(&r_z, val_z);
+
+  MatCreate(&r_x_det, 3, 3);
+  MatSetVal(&r_x_det, val_x_det);
+
+  MatCreate(&r_z_det, 3, 3);
+  MatSetVal(&r_z_det, val_z_det);
+
+  MatCreate(&r, 3, 3);
+  Mat tmp_value;
+  MatCreate(&tmp_value, 3, 3);
+
+  MatMul(&r_z_det, &r_x_det, &r);
+  MatMul(&r, &r_z, &tmp_value);
+  MatMul(&tmp_value, &r_y, &r);
+  MatMul(&r, &r_x, &tmp_value);
+  MatTrans(&tmp_value, &r);
+  double sy = sqrt(r.element[0][0] * r.element[0][0] +
+                   r.element[1][0] * r.element[1][0]);
+
+  int i = sy < 1e-6;
+  double x = 0;
+  double y = 0;
+  double z = 0;
+
+  if (!i) {
+    x = atan2(r.element[2][1], r.element[2][2]);
+    y = atan2(-r.element[2][0], sy);
+    z = atan2(r.element[1][0], r.element[0][0]);
+  } else {
+    x = atan2(-r.element[1][2], r.element[1][1]);
+    y = atan2(-r.element[2][0], sy);
+    z = 0;
+  }
+  log_trace("(roll %f)(ptich %f)(yaw angle %f)", x, y, z * ARC_TO_DEG);
+  return z;
 }

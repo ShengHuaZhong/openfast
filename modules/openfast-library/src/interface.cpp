@@ -290,6 +290,11 @@ void shipsportfun1_(double* V1_Surge, double* V1_Sway, double* V1_Heave,
                     double V1_Freedom[], double V1_velocity[])
 
 {
+  log_trace(
+      "call function (shipsportfun1_) (Surge %f), (Sawy %f) (Heave "
+      "%f) (Roll %f) (Pitch %f) (Yaw %f)",
+      eta_AHV1[0], eta_AHV1[1], eta_AHV1[2], eta_AHV1[3], eta_AHV1[4],
+      eta_AHV1[5]);
   *V1_Surge = eta_AHV1[0];
 
   *V1_Sway = eta_AHV1[1];
@@ -325,6 +330,11 @@ void shipsportfun2_(double* V2_Surge, double* V2_Sway, double* V2_Heave,
                     double V2_Freedom[], double V2_velocity[])
 
 {
+  log_trace(
+      "call function (shipsportfun2_) (Surge %f), (Sawy %f) (Heave "
+      "%f) (Roll %f) (Pitch %f) (Yaw %f)",
+      eta_AHV2[0], eta_AHV2[1], eta_AHV2[2], eta_AHV2[3], eta_AHV2[4],
+      eta_AHV2[5]);
   *V2_Surge = eta_AHV2[0];
 
   *V2_Sway = eta_AHV2[1];
@@ -362,6 +372,11 @@ void shipsportfun3_(double* V3_Surge, double* V3_Sway, double* V3_Heave,
                     double V3_Freedom[], double V3_velocity[])
 
 {
+  log_trace(
+      "call function (shipsportfun3_) (Surge %f), (Sawy %f) (Heave "
+      "%f) (Roll %f) (Pitch %f) (Yaw %f)",
+      eta_AHV3[0], eta_AHV3[1], eta_AHV3[2], eta_AHV3[3], eta_AHV3[4],
+      eta_AHV3[5]);
   *V3_Surge = eta_AHV3[0];
 
   *V3_Sway = eta_AHV3[1];
@@ -401,6 +416,11 @@ void shipsportfun4_(double* V4_Surge, double* V4_Sway, double* V4_Heave,
                     double V4_Freedom[], double V4_velocity[])
 
 {
+  log_trace(
+      "call function (shipsportfun4_) (Surge %f), (Sawy %f) (Heave "
+      "%f) (Roll %f) (Pitch %f) (Yaw %f)",
+      eta_AHV4[0], eta_AHV4[1], eta_AHV4[2], eta_AHV4[3], eta_AHV4[4],
+      eta_AHV4[5]);
   *V4_Surge = eta_AHV4[0];
   *V4_Sway = eta_AHV4[1];
   *V4_Heave = -eta_AHV4[2];
